@@ -63,7 +63,15 @@
     }
     return make('의뢰기관 확인까지 완료했습니다.','연계 과정과 역할별 처리 기록을 확인할 수 있습니다.','history','처리 기록 보기','hospital','green');
   }
-  const api={facilityStatus,nextTask};
+  function sourceSegments(text){
+    const fields={'회송 결정':['decision','context'],'필요 처치':['treatment','treatment'],'약제':['drug','medicine'],'용량':['dose','medicine'],'투여 간격':['interval','schedule'],'치료 기간':['period','schedule'],'격리 여부':['isolation','isolation'],'환자 선호':['preferences','preferences']};
+    return String(text).split('\n').map(text=>{
+      const colon=text.indexOf(':'),label=colon>=0?text.slice(0,colon).trim():'',field=Object.hasOwn(fields,label)?fields[label]:null;
+      if(!field)return {text,kind:'text'};
+      const value=text.slice(colon+1).trim();return {text,label,key:field[0],kind:field[1],value,missing:!value};
+    });
+  }
+  const api={facilityStatus,nextTask,sourceSegments};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.CareBridgeUX=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
