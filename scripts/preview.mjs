@@ -15,7 +15,8 @@ createServer(async(req,res)=>{try{
     const request=new Request(url,{method:req.method,headers:req.headers,...(!['GET','HEAD'].includes(req.method)?{body:Buffer.concat(chunks)}:{})});
     const result=await agent(request)||await facility(request)||await integrations(request)||await api(request);res.writeHead(result.status,Object.fromEntries(result.headers));res.end(Buffer.from(await result.arrayBuffer()));return;
   }
-  const path=resolve(root,'.'+(url.pathname==='/'?'/index.html':decodeURIComponent(url.pathname)));
+  const isAppRoute=/^\/(hospital|patient|facility)(\/|$)/.test(url.pathname);
+  const path=resolve(root,'.'+(url.pathname==='/'||isAppRoute?'/index.html':decodeURIComponent(url.pathname)));
   if(!path.startsWith(root+'/')){res.writeHead(403);res.end();return;}
   const bytes=await readFile(path);res.writeHead(200,{'Content-Type':types[path.split('.').pop()]||'application/octet-stream'});res.end(bytes);
 }catch{res.writeHead(404);res.end('Not found');}}).listen(4175,'127.0.0.1',()=>console.log('CareBridge: http://127.0.0.1:4175'));

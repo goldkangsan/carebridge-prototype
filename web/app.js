@@ -1,9 +1,10 @@
 (function(){
   'use strict';
-  const M=window.CareBridge,U=window.CareBridgeUX,KEY='carebridge-prototype-v2';
+  const M=window.CareBridge,U=window.CareBridgeUX,R=window.CareBridgeRoutes,KEY='carebridge-prototype-v2';
   let agentError='',basicMode=false,sourceEditMode=false;
   const roles={hospital:'의뢰기관',patient:'환자·보호자',facility:'수용기관',simulation:'자동 처리'};
-  let state=M.initial(),role='hospital',view='case',facility='saebom',compare=new Set(),toastTimer,consentDraft=false;
+  const initialRoute=R.parse(routeLocation());
+  let state=M.initial(),role=initialRoute.role||'hospital',view=initialRoute.view,facility=initialRoute.facility||'saebom',compare=new Set(),toastTimer,consentDraft=false;
   let apiReady=false,aiAvailable=false,apiChecked=false,working=false,autoEnabled=true,autoRunning=false,autoRunId=0,generation=0,apiCalls=[],routeResults={},hospitalResults=null,hospitalFocus=null,hospitalArea='gwanak',hospitalLoading=false,hospitalError='',aiError='',liveMessage='서비스 준비 중';
   try{const saved=JSON.parse(localStorage.getItem(KEY));if(saved?.version===1&&Number.isInteger(saved.stage)&&saved.stage>=0&&saved.stage<=7)state=saved;}catch{}
   if(!state.preferences.profile)state.preferences.profile='balanced';state.facilityUpdates=state.facilityUpdates||{};state.agentRuns=state.agentRuns||[];state.inquiryDraft=state.inquiryDraft||'';
@@ -15,7 +16,7 @@
   const displayFact=value=>esc(serviceText(value).replace(/\s*\((?:가상(?:·비교용)?|예시(?: 기준)?)\)/g,''));
   const facilityType=f=>esc(f.type.replace(/^가상\s+/,''));
   const when=t=>new Date(t).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
-  const button=(text,action,cls='',extra='')=>`<button type="button" class="${cls}" data-action="${action}" ${extra}>${text}</button>`;
+  const button=(text,action,cls='',extra='')=>{const dest=action.startsWith('go-')?rolePath(action.slice(3)):['case','history','flow','guide','hospitals'].includes(action)?rolePath(role,action):null;return dest?`<a class="route-link ${cls}" href="${dest}" data-route="${dest}" data-action="${action}" ${extra}>${text}</a>`:`<button type="button" class="${cls}" data-action="${action}" ${extra}>${text}</button>`;};
   const badge=(text,tone='')=>`<span class="badge ${tone}">${text}</span>`;
   const statusBadge=x=>badge(`<span aria-hidden="true" class="status-symbol">${esc(x.icon)}</span>${esc(x.label)}`,x.tone+' status-badge');
   const capability=(label,yes)=>statusBadge({label:label+(yes?' 가능':' 불가'),tone:yes?'green':'red',icon:yes?'✓':'×'});
@@ -23,6 +24,31 @@
   const dl=(items)=>`<dl>${items.map(([k,v])=>`<div class="data-row"><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>`;
   const selected=()=>M.facilities.find(f=>f.id===state.selected);
   function toast(message,error=false){if(error&&$('#dialog').open){let alert=$('#dialog .dialog-error');if(!alert){alert=document.createElement('p');alert.className='notice red dialog-error';alert.setAttribute('role','alert');$('#dialog .dialog-body').prepend(alert);}alert.textContent=serviceText(message);alert.scrollIntoView({block:'nearest'});}const t=$('#toast');t.textContent=serviceText(message);t.className='show'+(error?' toast-error':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.className='',4000);}
+  function routeLocation(){return location.protocol==='file:'?(location.hash.startsWith('#/')?location.hash.slice(1):'/'):location.pathname;}
+  function rolePath(r,v='case',id){
+    const receiver=id||state.selected||(state.stage===2&&state.inquiries.length?state.inquiries.includes(facility)?facility:state.inquiries[0]:facility);
+    return R.path({role:r,view:v,facility:receiver});
+  }
+  function writeRoute(path,replace=false){
+    const target=location.protocol==='file:'?'#'+path:path;
+    if(routeLocation()!==path||replace)history[replace?'replaceState':'pushState']({},'',target);
+  }
+  function navigateRoute(path,{replace=false,pop=false}={}){
+    const dest=R.parse(path);close();
+    if(dest.role==='facility'&&state.stage===2&&autoEnabled){autoEnabled=false;generation++;autoRunId++;autoRunning=false;liveMessage='수용기관 직접 응답 모드';save();}
+    role=dest.role||'hospital';view=dest.view;
+    if(dest.role==='facility')facility=dest.facility||state.selected||state.inquiries[0]||'saebom';
+    const canonical=dest.role?rolePath(role,view,facility):view==='home'?'/':path;
+    if(!pop)writeRoute(canonical,replace);else if(canonical!==path)writeRoute(canonical,true);
+    render();window.scrollTo(0,0);$('#main')?.focus({preventScroll:true});
+    if(view==='hospitals'&&!hospitalResults)loadHospitals();
+    if(view==='case')queueMicrotask(kickAutomation);
+  }
+  function portalMarkup(){
+    const entries=[['hospital','의뢰기관','회송 정보 확인과 기관 문의','진행 현황과 회신을 확인하고 전원을 준비합니다.'],['patient','환자·보호자','희망 조건과 병원 비교·선택','수용 가능한 병원을 비교하고 진행 상황을 확인합니다.'],['facility','수용기관','수용 문의와 첫 진료 회신','도착한 문의에 응답하고 진료 이행 여부를 전달합니다.']];
+    return `<div class="demo-strip"><span><strong>서비스 프로토타입</strong> · 환자·기관 응답은 예시 데이터입니다. 실제 환자 정보를 입력하지 마세요.</span></div><header><a class="brand" href="/" data-route="/" aria-label="케어브릿지 첫 화면으로"><div class="brand-mark" aria-hidden="true">cb</div><div><strong>케어브릿지</strong><span>CAREBRIDGE</span></div></a><span class="current-workspace">비응급 전원·회송 연계</span></header><main id="main" class="portal-main" tabindex="-1"><div class="portal-intro"><p class="eyebrow">CAREBRIDGE</p><h1>케어브릿지</h1><p>기관 탐색부터 첫 진료 확인까지.<br>이용할 화면을 선택해 주세요.</p></div><nav class="portal-entries" aria-label="역할별 서비스">${entries.map(([r,title,task,desc],i)=>`<a class="portal-entry" href="${rolePath(r)}" data-route="${rolePath(r)}"><span class="portal-entry-index">0${i+1}</span><div><h2>${title}</h2><strong>${task}</strong><p>${desc}</p></div><span class="portal-arrow" aria-hidden="true">→</span></a>`).join('')}</nav>${state.events.length?`<section class="portal-resume"><div><h2>진행 중인 회송</h2><p>${esc(state.caseId)} · ${esc(M.stages[state.stage])}${state.stage===7?' · 완료':''}</p></div><a class="route-link primary" href="${rolePath(nextRole())}" data-route="${rolePath(nextRole())}">진행 기록 이어보기</a></section>`:''}<details class="support-details receiver-links"><summary>수용기관별 화면 주소</summary><div>${M.facilities.map(f=>`<a class="route-link small" href="${rolePath('facility','case',f.id)}" data-route="${rolePath('facility','case',f.id)}">${esc(f.name)}</a>`).join('')}</div></details><p class="portal-note">각 화면은 별도 주소로 열립니다. 진행 정보는 현재 브라우저에 저장되며, 다른 기기와 자동 공유되지는 않습니다.</p><footer class="app-footer">서울대학교 산업공학과 · 헬스케어 서비스 혁신 프로젝트 / CareBridge</footer></main>`;
+  }
+
   function save(){try{localStorage.setItem(KEY,JSON.stringify(state));localStorage.setItem(KEY+'-auto',String(autoEnabled));}catch{toast('이 브라우저에서는 진행 상태를 저장할 수 없습니다.');}}
   function setBusy(value,label='진행 상태를 반영하고 있습니다…'){
     working=value;document.body.classList.toggle('is-working',value);document.body.setAttribute('aria-busy',String(value));
@@ -63,6 +89,7 @@
     }
   }
   async function kickAutomation(){
+    if(view==='home'||view==='not-found')return;
     if(!autoEnabled||autoRunning||working||!apiChecked)return;
     if(!(state.stage===1&&state.consent||state.stage===2&&state.consent))return;
     if(agentError)return;
@@ -102,7 +129,7 @@
   }
 
   function photo(f,small=false){return `<figure class="facility-photo ${small?'compact':''}"><img src="assets/${f.id==='saebom'?'facility-lounge':f.id}.jpg" alt="${f.name}의 가상 시설 환경 예시 · AI 생성" width="1100" height="733" loading="lazy"></figure>`;}
-  function goRole(r){if(r==='facility'&&state.stage===2&&autoEnabled){autoEnabled=false;generation++;autoRunId++;autoRunning=false;liveMessage='수용기관 직접 응답 모드';save();toast('직접 응답할 수 있도록 자동 진행을 일시 정지했습니다.');}if(r==='facility'&&state.stage===2&&!state.inquiries.includes(facility))facility=state.inquiries[0]||facility;role=r;if(r==='facility'&&state.selected)facility=state.selected;view='case';render();window.scrollTo({top:0,behavior:'smooth'});}
+  function goRole(r){navigateRoute(rolePath(r));}
   function pageHead(title,sub){
     if(view==='case'){
       const names={hospital:['회송 정보 확인','환자 동의 확인','기관 회신 확인','환자 선택 대기','전원 준비','첫 진료 회신 대기','회신 확인·마무리','연계 완료'],patient:['병원에서 정보를 확인하고 있어요','희망 조건과 문의 동의','병원의 답변을 기다리고 있어요','병원 비교·선택','선택한 병원과 연결 중이에요','첫 진료 안내','진료 결과 확인 중이에요','연계가 완료됐어요'],facility:['수용 문의','수용 문의','수용 여부 응답','환자 선택 대기','전원 준비 대기','첫 진료 이행 회신','의뢰기관 확인 대기','연계 완료']};
@@ -205,17 +232,20 @@
   function historyPage(){return pageHead('회송 처리 기록','역할별 작업과 예외 처리 흐름을 확인하고, 진행 기록을 내려받을 수 있습니다.')+`<section class="panel"><div class="row space"><h2>${state.caseId}</h2>${button('진행 기록 내려받기','export','primary')}</div><div class="cards-inline"><div><strong>${state.events.length}건</strong><span>이 브라우저의 기록된 작업</span></div><div><strong>${state.metrics.errors}회</strong><span>진행 조건 미충족 시도</span></div><div><strong>${M.stages[state.stage]}</strong><span>현재 단계</span></div></div><p class="tiny">위 수치는 합성 예시의 조작 기록입니다. 실제 업무 절감량·효과 지표가 아닙니다.</p>${activity(300)}</section>`;}
   function guide(){return pageHead('프로토타입 안내','설계된 업무 흐름과 가상 상태 전환을 검증하는 1차 예시 버전입니다.')+`<section class="panel readme"><h2>정상 시나리오 · 약 3분</h2><ol><li>의뢰기관: 담당의 회송 결정 확인 → 회송 정보 구조화 → 기관 문의 준비</li><li>환자·보호자: 선호 조건 선택 → 비식별 문의 동의</li><li>의뢰기관: 비식별 수용 문의 생성 → 가상 응답 불러오기 → 후보 공개</li><li>환자·보호자: 기관 상세 확인·나란히 비교 → 기관 선택 및 정보 전달 동의</li><li>의뢰기관: 전원 준비 확인 → 공식 회송 전달 기록 생성 (예시)</li><li>수용기관: 선택 기관에서 첫 진료 이행 회신</li><li>의뢰기관: 회신 확인 → 연계 완료</li></ol><h2>예외 시나리오</h2><p>‘정보 누락’은 투여 간격이 비어 있어 문의로 넘어갈 수 없습니다. 담당의 보완 회신을 입력해야 합니다. ‘수용 불가’는 첫 문의의 모든 기관이 거절하여 재탐색이 필요합니다. 첫 진료 회신에서 ‘미이행’을 선택하면 완료 대신 재연계합니다.</p><h2>현재 구현된 것과 모의 기능</h2>${dl([['동작하는 기능','역할별 화면, 규칙 기반 필수 항목 점검, 후보 필터·정렬, 기관 응답, 비교·선택, 전달 범위, 단계별 진행 조건, 처리 기록·JSON 내보내기'],['모의 기능','LLM, EMR/FHIR, HIRA 공식 중계, 지도 거리, 실제 병상·금액, 알림톡·문자 전송'],['데이터','모든 환자·기관·가격·처방·응답은 합성 예시 데이터'],['저장','이 브라우저의 로컬 저장소에만 진행 상태 저장. 다른 기기·역할 간 서버 동기화 없음.'],['인증','화면 상단의 역할 전환은 실제 로그인·권한 보안이 아님.'],['제외 범위','응급 전원, 자택 귀가, 임상 적합성 판단, 수가·청구 계산, 첫 진료 이후 장기 추적']])}</section>`;}
   function renderBase(){
-    $('#app').innerHTML=`<div class="demo-strip"><span><strong>서비스 프로토타입</strong> · 회송 사례·기관 응답은 가상입니다. 실제 환자 정보를 입력하지 마세요.</span><span>수용 응답은 모의 데이터</span></div><header><a class="brand" href="/" data-action="home" aria-label="케어브릿지 첫 화면으로"><div class="brand-mark" aria-hidden="true">cb</div><div><strong>케어브릿지</strong><span>CAREBRIDGE</span></div></a><span class="current-workspace">${roles[role]} 화면</span><details class="demo-controls" id="demo-controls"><summary>진행 설정</summary><div class="demo-popover">${role==='facility'?`<label class="field"><span>확인할 기관</span><select id="facility-select">${M.facilities.map(x=>`<option value="${x.id}" ${x.id===facility?'selected':''}>${x.name}</option>`).join('')}</select></label>`:''}<h2>화면 전환</h2><p class="tiny">역할별 화면을 확인하는 기능이며 실제 로그인은 아닙니다.</p><nav class="role-tabs" aria-label="화면 전환">${Object.entries(roles).filter(([k])=>k!=='simulation').map(([k,v])=>button(v,'role',role===k?'active':'',`data-role="${k}" aria-pressed="${role===k}"`)).join('')}</nav><label class="field"><span>시나리오</span><select id="scenario-select"><option value="normal" ${state.scenario==='normal'?'selected':''}>정상 연계</option><option value="missing" ${state.scenario==='missing'?'selected':''}>회송 정보 누락</option><option value="unavailable" ${state.scenario==='unavailable'?'selected':''}>수용 불가·재탐색</option></select></label><div class="row">${button(autoEnabled?'자동 진행 켜짐':'자동 진행 꺼짐','toggle-auto',autoEnabled?'selected small':'small',`aria-pressed="${autoEnabled}"`)}${button('처음부터','reset','quiet small')}</div>${state.stage===2?`<div class="row">${button('가상 응답 불러오기','demo','quiet small')}${button('무응답 예외 처리','timeout-demo','quiet small')}</div>`:''}${button('이용 안내','guide','quiet small')}</div></details></header><div class="workspace"><aside class="sidebar"><div class="side-label">${roles[role]}</div><nav class="side-nav" aria-label="작업 메뉴">${button('회송 업무','case',view==='case'?'active':'')}${button('처리 기록 <span class="number">'+state.events.length+'</span>','history',view==='history'?'active':'')}</nav><details class="reference-nav"><summary>참고 자료</summary><nav class="side-nav" aria-label="참고 자료">${button('서비스 흐름','flow',view==='flow'?'active':'')}${button('공개 기관 정보 조회','hospitals',view==='hospitals'?'active':'')}${button('기능 안내','integration','')}${button('이용 안내','guide',view==='guide'?'active':'')}</nav></details></aside><main id="main" tabindex="-1">${view==='hospitals'?hospitalsPage():view==='flow'?flowPage():view==='history'?historyPage():view==='guide'?guide():role==='hospital'?hospital():role==='patient'?patient():facilityView()}<footer class="app-footer">서울대학교 산업공학과 · 헬스케어 서비스 혁신 프로젝트 / CareBridge</footer></main></div>`;
+    if(view==='home'){ $('#app').innerHTML=portalMarkup();return;}
+    if(view==='not-found'){ $('#app').innerHTML='<main id="main" class="portal-main"><h1>페이지를 찾을 수 없습니다</h1><p>주소를 확인하거나 첫 화면에서 이용할 화면을 선택해 주세요.</p><a class="route-link primary" href="/" data-route="/">첫 화면으로</a></main>';return;}
+    $('#app').innerHTML=`<div class="demo-strip"><span><strong>서비스 프로토타입</strong> · 회송 사례·기관 응답은 가상입니다. 실제 환자 정보를 입력하지 마세요.</span><span>수용 응답은 모의 데이터</span></div><header><a class="brand" href="/" data-action="home" aria-label="케어브릿지 첫 화면으로"><div class="brand-mark" aria-hidden="true">cb</div><div><strong>케어브릿지</strong><span>CAREBRIDGE</span></div></a><span class="current-workspace">${roles[role]} 화면</span><details class="demo-controls" id="demo-controls"><summary>진행 설정</summary><div class="demo-popover">${role==='facility'?`<label class="field"><span>확인할 기관</span><select id="facility-select">${M.facilities.map(x=>`<option value="${x.id}" ${x.id===facility?'selected':''}>${x.name}</option>`).join('')}</select></label>`:''}<h2>화면 전환</h2><p class="tiny">역할별 화면을 확인하는 기능이며 실제 로그인은 아닙니다.</p><a class="route-link small" href="/" data-route="/">다른 이용 화면 선택</a><label class="field"><span>시나리오</span><select id="scenario-select"><option value="normal" ${state.scenario==='normal'?'selected':''}>정상 연계</option><option value="missing" ${state.scenario==='missing'?'selected':''}>회송 정보 누락</option><option value="unavailable" ${state.scenario==='unavailable'?'selected':''}>수용 불가·재탐색</option></select></label><div class="row">${button(autoEnabled?'자동 진행 켜짐':'자동 진행 꺼짐','toggle-auto',autoEnabled?'selected small':'small',`aria-pressed="${autoEnabled}"`)}${button('처음부터','reset','quiet small')}</div>${state.stage===2?`<div class="row">${button('가상 응답 불러오기','demo','quiet small')}${button('무응답 예외 처리','timeout-demo','quiet small')}</div>`:''}${button('이용 안내','guide','quiet small')}</div></details></header><div class="workspace"><aside class="sidebar"><div class="side-label">${roles[role]}</div><nav class="side-nav" aria-label="작업 메뉴">${button('회송 업무','case',view==='case'?'active':'')}${button('처리 기록 <span class="number">'+state.events.length+'</span>','history',view==='history'?'active':'')}</nav><details class="reference-nav"><summary>참고 자료</summary><nav class="side-nav" aria-label="참고 자료">${button('서비스 흐름','flow',view==='flow'?'active':'')}${button('공개 기관 정보 조회','hospitals',view==='hospitals'?'active':'')}${button('기능 안내','integration','')}${button('이용 안내','guide',view==='guide'?'active':'')}</nav></details></aside><main id="main" tabindex="-1">${view==='hospitals'?hospitalsPage():view==='flow'?flowPage():view==='history'?historyPage():view==='guide'?guide():role==='hospital'?hospital():role==='patient'?patient():facilityView()}<footer class="app-footer">서울대학교 산업공학과 · 헬스케어 서비스 혁신 프로젝트 / CareBridge</footer></main></div>`;
   }
 
-  function render(){renderBase();enhance();enhanceUX();if(working)setBusy(true);}
+  function render(){renderBase();enhance();enhanceUX();const skip=$('.skip');if(skip&&location.protocol!=='file:')skip.href=location.pathname+'#main';if(working)setBusy(true);}
   function modal(title,content,actions=''){const d=$('#dialog');d.classList.toggle('wide',title==='병원 상세 비교');d.innerHTML=`<div class="dialog-head"><h2 id="dialog-title">${title}</h2>${button('닫기','close','quiet small','aria-label="대화상자 닫기"')}</div><div class="dialog-body">${content}</div>${actions?`<div class="dialog-actions">${actions}</div>`:''}`;if(!d.open)d.showModal();enhance();updateFormReadiness();}
   function close(){if($('#dialog').open)$('#dialog').close();}
   function detail(id){const f=M.candidates(state).find(x=>x.id===id);modal(f.name,`<p class="sub">${facilityType(f)} · ${f.area}</p>${dl([['필요 처치',capability('정맥 투여',f.iv)],['격리 역량',capability('격리 처치',f.isolation)],['이동 거리',f.km+'km · '+f.minutes+'분'],['예상 비용',money(f.cost)+' / 1일'],['기관 평가·응답 이력',f.quality+'/100 · 응답률 '+f.responseRate+'% · 불일치 '+f.mismatchRate+'%'],['기관 등록 병상',f.beds+'개'],['정보 갱신',f.updated],['수용 응답',f.response?displayFact(responseNames[f.response.status][0]+' · '+(f.response.reason||'')):'수용기관의 별도 확인 필요'],['후보 포함 근거',f.eligible?'처치 조건과 이동 범위 충족. 수용 여부는 별도 응답으로 확인.':esc(f.reasons.join(', '))]])}<div class="notice">기관 등록 역량·현재 수용 응답·환자 선택은 서로 다른 단계입니다. 비용과 품질을 임상적 적합성의 근거로 대신하지 않습니다.</div>`);}
   async function dispatch(event){
+    const link=event.target.closest('a[data-route]');if(link){if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();navigateRoute(link.dataset.route);return;}
     const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const a=el.dataset.action,id=el.dataset.id;
     if(a==='source-edit'||a==='source-preview'){setSourceView(a==='source-edit');return;}
-    if(a==='home'){event.preventDefault();close();goRole('hospital');$('#main')?.focus({preventScroll:true});return;}
+    if(a==='home'){event.preventDefault();navigateRoute('/');return;}
     if(a==='close'){close();return;}
     if(a.startsWith('focus-')){const selectors={'focus-attest':'[data-change="attest"]','focus-consent':'[data-change="consent-draft"]','focus-candidates':'.patient-grid','focus-preferences':'#patient-preferences','focus-response':'#response-status','focus-visit':'#visit-result','focus-prep':'[data-change^="prep-"]:not(:checked)'};const target=$(selectors[a]||'#main');if(target){(target.closest('.panel')||target).scrollIntoView({behavior:'smooth',block:'center'});(a==='focus-candidates'?target.querySelector('button'):target)?.focus?.({preventScroll:true});}return;}
     if(a==='reject-candidates'){modal('후보가 맞지 않는 이유',`<p class="sub">선택한 사유를 다음 탐색의 필수 조건과 가중치에 반영합니다. 새 조건으로 문의하기 전에 동의를 다시 확인합니다.</p><label class="field"><span>다시 찾는 이유 (가상)</span><select id="reject-reason"><option value="distance">보호자가 더 가까운 곳에 방문해야 해요</option><option value="cost">하루 비용을 4만원 이내로 줄이고 싶어요</option><option value="time">이동 시간이 30분 이내여야 해요</option></select></label>`,button('취소','close')+button('사유 반영하고 다시 찾기','confirm-reject','primary'));return;}
@@ -239,7 +269,7 @@
     if(a==='send-info'){if(await act({type:'provideInfo',id,note:$('#inquiry-note').value,confirmed:$('#inquiry-attest').checked})){close();toast('보완 내용을 전달했습니다. 기관 재응답을 기다립니다.');}return;}
     if(a==='role'){goRole(el.dataset.role);return;}
     if(a.startsWith('go-')){goRole(a.slice(3));return;}
-    if(['case','history','flow','guide'].includes(a)){close();view=a;render();window.scrollTo(0,0);return;}
+    if(['case','history','flow','guide'].includes(a)){navigateRoute(rolePath(role,a));return;}
     if(a==='review-referral'){
       if(working)return;if(!state.doctorApproved){toast('담당의의 회송 결정을 먼저 확인해 주세요.',true);return;}
       if(aiAvailable&&state.source===M.initial(state.scenario).source){await analyzeAI();return;}
@@ -247,7 +277,7 @@
     }
     if(a==='references'){modal('참고 자료',button('서비스 흐름','flow')+button('공개 기관 정보 조회','hospitals')+button('기능 안내','integration')+button('이용 안내','guide'));return;}
     if(a==='ai-parse'){await analyzeAI();return;}
-    if(a==='hospitals'){close();view='hospitals';render();if(!hospitalResults)loadHospitals();return;}
+    if(a==='hospitals'){navigateRoute(rolePath(role,'hospitals'));return;}
     if(a==='hospital-map'){hospitalFocus=hospitalResults?.items.find(f=>f.id===id)||null;render();document.querySelector('.directory-map')?.scrollIntoView({behavior:'smooth',block:'center'});return;}
     if(a==='hospital-search'){await loadHospitals();return;}
     if(a==='parse'){state.extraction=null;aiError='';const val=$('#referral-source').value;if(val!==state.source&&!await act({type:'source',value:val}))return;await act({type:'parse'});return;}
@@ -267,7 +297,7 @@
     if(a==='supplement'){modal('담당의 보완 회신 입력 (예시)',`<p class="sub">문서에 없는 처방을 추정하지 않습니다. 이 입력은 담당의가 보완한 정보를 전달받는 상황을 반영합니다.</p>${M.missing(state).map(k=>`<label class="field"><span>${M.fields[k]}</span><input id="supp-${k}" value="" placeholder="담당의 보완 회신 내용 (가상)"></label>`).join('')}<label class="check"><input type="checkbox" id="doctor-replied"><span>담당의의 보완 회신을 받은 상황임을 확인합니다. (예시)</span></label>`,button('취소','close')+button('보완 회신 반영','confirm-supplement','primary'));return;}
     if(a==='confirm-supplement'){const values=Object.fromEntries(M.missing(state).map(k=>[k,$('#supp-'+k).value]));if(await act({type:'supplement',values,confirmed:$('#doctor-replied').checked})){close();toast('담당의 보완 회신을 반영했습니다.');}return;}
     if(a==='reset'){resetModal(state.scenario);return;}
-    if(a==='confirm-reset'){if(working)return;generation++;autoRunId++;autoRunning=false;aiError='';agentError='';basicMode=false;sourceEditMode=false;consentDraft=false;state=M.initial($('#reset-scenario')?.value||el.dataset.scenario);compare.clear();role='hospital';facility='saebom';view='case';liveMessage='회송 정보 점검 대기';save();close();render();toast('가상 시나리오를 초기화했습니다.');return;}
+    if(a==='confirm-reset'){if(working)return;generation++;autoRunId++;autoRunning=false;aiError='';agentError='';basicMode=false;sourceEditMode=false;consentDraft=false;state=M.initial($('#reset-scenario')?.value||el.dataset.scenario);compare.clear();role='hospital';facility='saebom';view='case';liveMessage='회송 정보 점검 대기';save();close();writeRoute('/hospital');render();toast('가상 시나리오를 초기화했습니다.');return;}
     if(a==='export'){
       const data={prototype:'CareBridge v5',synthetic:true,scope:'비응급 회송 결정 이후부터 의뢰기관의 첫 진료 이행 회신 확인까지',scenario:state.scenario,stage:M.stages[state.stage],completed:state.ack,metrics:state.metrics,events:state.events,apiMode:apiReady,apiCalls};
       const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const anchor=document.createElement('a');anchor.href=url;anchor.download='carebridge-demo-record.json';anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('진행 기록을 내려받았습니다.');return;
@@ -303,7 +333,7 @@
   }
   function enhance(){
     const footer=$('.app-footer');if(footer)footer.textContent='서울대학교 산업공학과 · 헬스케어 서비스 혁신 프로젝트 / CareBridge v5';
-    const strip=$('.demo-strip span:last-child');if(strip)strip.textContent=apiReady?'수용 응답은 모의 데이터':'기본 모드 · 수용 응답은 모의 데이터';
+    const strip=$('.demo-strip span:nth-child(2)');if(strip)strip.textContent=apiReady?'수용 응답은 모의 데이터':'기본 모드 · 수용 응답은 모의 데이터';
     const next=$('.walkthrough');if(next&&nextRole()!==role&&!next.querySelector('[data-action="next-role"]'))next.insertAdjacentHTML('beforeend',button(roles[nextRole()]+' 화면으로','next-role','small'));
     if(next&&autoEnabled&&(state.stage===1&&state.consent||state.stage===2)&&!allAnsweredWithoutAcceptance()){next.querySelector('span').textContent='기관 문의와 회신을 확인하고 있어요. 환자 선택과 최종 확인은 직접 진행합니다.';next.querySelector('[data-action="next-role"]')?.remove();}
     if(next&&allAnsweredWithoutAcceptance())next.querySelector('span').textContent='수용 가능한 기관이 없습니다. 의뢰기관에서 추가 정보 요청 또는 탐색 범위를 확인해 주세요.';
@@ -394,6 +424,7 @@
   }
 
   function enhanceUX(){
+    if(view==='home'||view==='not-found')return;
     const header=document.querySelector('header');
     if(header&&!$('.mobile-nav'))header.insertAdjacentHTML('afterend',`<nav class="mobile-nav" aria-label="모바일 작업 메뉴">${button('회송 업무','case',view==='case'?'active':'')}${button('처리 기록','history',view==='history'?'active':'')}${button('참고 자료','references',view==='guide'?'active':'')}</nav>`);
     if(view==='case'){
@@ -411,13 +442,16 @@
   document.addEventListener('change',async e=>{
     const t=e.target;
     if(t.id==='scenario-select'){resetModal(t.value);return;}
-    if(t.id==='facility-select'){facility=t.value;render();return;}
+    if(t.id==='facility-select'){navigateRoute(rolePath('facility',view,t.value));return;}
     if(t.id==='referral-source'){return;}
     if(t.dataset.change==='attest')await act({type:'attest',value:t.checked});
     if(t.dataset.change==='consent-draft'){consentDraft=t.checked;render();$('[data-change="consent-draft"]')?.focus({preventScroll:true});return;}
     if(t.dataset.change==='consent'){if(!t.checked){compare.clear();consentDraft=false;}await act({type:'consent',value:t.checked});}
     if(t.dataset.change?.startsWith('prep-'))await act({type:'prep',key:t.dataset.change.slice(5),value:t.checked});
   });
+  if(initialRoute.role==='facility'&&!initialRoute.facility){facility=state.selected||state.inquiries[0]||'saebom';writeRoute(rolePath('facility',view,facility),true);}
+  if(role==='facility'&&state.stage===2&&autoEnabled){autoEnabled=false;save();}
+  window.addEventListener('popstate',()=>navigateRoute(routeLocation(),{pop:true}));
   render();
   checkApi();
 })();
