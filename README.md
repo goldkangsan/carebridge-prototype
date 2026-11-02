@@ -57,4 +57,6 @@ OSRM / © OpenStreetMap contributors. API 문서: https://project-osrm.org/docs/
 
 공개 기관 검색: OpenStreetMap / Nominatim. [이용 정책](https://operations.osmfoundation.org/policies/nominatim/). 세 지역의 제한된 사용자 요청만 처리하고 자동완성·주기적 수집은 하지 않습니다. 애플리케이션 식별 헤더, 함수 내 1.1초 호출 간격, 6시간 메모리·배포 CDN 캐시를 적용합니다. 소규모 수업 시연용으로 사용하며 대규모 공개 운영 전에 전용 제공자와 전역 호출 제한이 필요합니다. 서버 환경 변수 `HOSPITAL_DIRECTORY_API_URL`로 제공자를 교체할 수 있습니다.
 
-AI API: [Google Gemini OpenAI 호환 API](https://ai.google.dev/gemini-api/docs/openai), 현재 모델 `gemini-3.1-flash-lite`. OpenAI 직접 연결과 [Vercel AI Gateway OIDC](https://vercel.com/docs/ai-gateway/authentication-and-byok/oidc)도 선택 가능합니다. 준비된 합성 문서의 검증된 응답은 24시간 배포 CDN 캐시를 사용합니다. AI 분석은 처방의 적절성이나 임상 안전성을 검증하지 않습니다.
+AI API: [Google Gemini OpenAI 호환 API](https://ai.google.dev/gemini-api/docs/openai), 현재 배포 모델 `gemini-3.5-flash-lite`. OpenAI 직접 연결과 [Vercel AI Gateway OIDC](https://vercel.com/docs/ai-gateway/authentication-and-byok/oidc)도 선택 가능합니다. 준비된 합성 문서의 검증된 응답은 24시간 배포 CDN 캐시를 사용합니다. AI 분석은 처방의 적절성이나 임상 안전성을 검증하지 않습니다.
+
+일시적인 제공자 404/429/5xx 또는 연결 오류는 제한된 횟수로 재시도하고, Gemini 모델 간 대체 요청을 수행합니다. 최종 결과에는 실제 사용한 모델을 기록하며, 모든 시도가 실패하면 분석 완료로 표시하지 않습니다.
