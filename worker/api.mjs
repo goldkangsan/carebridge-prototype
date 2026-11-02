@@ -6,7 +6,7 @@ export function createApi(M, upstreamFetch = fetch) {
   const json = (data,status=200) => new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
   return async function api(request) {
     const url = new URL(request.url), path=url.pathname;
-    if(path==='/api/health' && request.method==='GET') return json({version:2,mode:'stateless-demo-api',medicalIntegration:false,routeProvider:'OSRM',synthetic:true});
+    if(path==='/api/health' && request.method==='GET') return json({version:2,release:3,mode:'stateless-demo-api',medicalIntegration:false,routeProvider:'OSRM',hospitalDirectory:'OpenStreetMap / Nominatim',aiAnalysisAvailable:process.env.AI_ANALYSIS_ENABLED==='true',synthetic:true});
     if(path==='/api/route' && request.method==='GET') {
       const id=url.searchParams.get('facility');
       if(!points[id]) return json({error:'유효한 시연 기관을 선택해 주세요.'},400);

@@ -30,7 +30,7 @@ Node.js 22 이상. `npm run dev`로 실행한 뒤 http://127.0.0.1:4175 를 엽�
 
 GitHub에는 소스를 보관하고 Vercel에서 화면과 API를 함께 실행합니다. Vercel 설정은 framework Other, build command `npm run build`, output directory `public`, Node.js 22입니다. GitHub 자동 배포는 연결되어 있지 않으며 배포 소스를 직접 업로드합니다.
 
-AI 분석은 요청별 `x-vercel-oidc-token` 또는 서버의 `AI_GATEWAY_API_KEY`를 사용합니다. 인증 정보를 브라우저에 노출하지 않습니다. AI Gateway 계정 승인·크레딧이 없으면 실제 분석을 완료한 것처럼 표시하지 않고 기본 항목 점검을 별도로 제공합니다. 2026-11-02 확인 당시 Gateway가 HTTP 403을 반환하여 계정 활성화 확인이 필요했습니다.
+AI 분석은 요청별 `x-vercel-oidc-token` 또는 서버의 `AI_GATEWAY_API_KEY`를 사용합니다. 인증 정보를 브라우저에 노출하지 않습니다. AI Gateway 계정 승인·크레딧이 없으면 실제 분석을 완료한 것처럼 표시하지 않고 기본 항목 점검을 별도로 제공합니다. 2026-11-02 확인 당시 Gateway가 HTTP 403을 반환하여 결제수단 등록을 요구했습니다. 카드 등록은 사용자가 직접 수행해야 하며 임의로 결제·구매하지 않습니다. 계정 설정 후 서버 환경 변수 `AI_ANALYSIS_ENABLED=true`로 AI 버튼을 활성화할 수 있습니다. 현재는 비활성화하고 기본 항목 점검으로 데모를 진행합니다.
 
 - `web/`: 화면과 합성 데이터 모델
 - `worker/api.mjs`: 공통 Request/Response API
