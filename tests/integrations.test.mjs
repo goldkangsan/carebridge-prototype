@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import M from '../web/model.js';
-import {createIntegrations} from '../worker/integrations.mjs';
+import {createIntegrations,llmConfig} from '../worker/integrations.mjs';
 const req=path=>new Request('https://demo.test'+path);
+test('direct provider keys stay on their own fixed API endpoints',()=>{const openai=llmConfig({OPENAI_API_KEY:'test-openai'}),gemini=llmConfig({GEMINI_API_KEY:'test-gemini'});assert.equal(openai.endpoint,'https://api.openai.com/v1/chat/completions');assert.equal(gemini.endpoint,'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');assert.equal(gemini.model,'gemini-3.1-flash-lite');assert.equal(llmConfig({LLM_PROVIDER:'unknown'}),null);});
+test('direct OpenAI and Gemini structured extraction use the selected provider',async()=>{for(const id of ['openai','gemini']){let request;const env=id==='openai'?{OPENAI_API_KEY:'test-openai'}:{GEMINI_API_KEY:'test-gemini'};const api=createIntegrations(M,{env,upstreamFetch:async(url,options)=>{request={url,body:JSON.parse(options.body)};return Response.json({choices:[{message:{content:JSON.stringify(M.extract(M.initial().source))}}]});}});const data=await(await api(req('/api/extract'))).json();assert.equal(data.mode,'live');assert.equal(data.model,llmConfig(env).model);assert.equal(request.url,llmConfig(env).endpoint);assert.equal(request.body.response_format.type,'json_schema');}});
 test('integration router passes unrelated POST requests to the transition handler',async()=>{assert.equal(await createIntegrations(M)(new Request('https://demo.test/api/transition',{method:'POST'})),null);});
 test('AI endpoint refuses arbitrary prompts before any upstream call',async()=>{let called=false;const api=createIntegrations(M,{env:{AI_GATEWAY_API_KEY:'test-only'},upstreamFetch:async()=>{called=true;}});assert.equal((await api(req('/api/extract?scenario=normal&prompt=untrusted'))).status,400);assert.equal(called,false);});
 test('missing AI credentials return unavailable, never fabricated live output',async()=>{const r=await createIntegrations(M,{env:{}})(req('/api/extract'));assert.equal(r.status,503);assert.equal((await r.json()).mode,'unavailable');});
