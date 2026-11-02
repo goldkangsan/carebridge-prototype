@@ -63,6 +63,15 @@
     }
     return make('의뢰기관 확인까지 완료했습니다.','연계 과정과 역할별 처리 기록을 확인할 수 있습니다.','history','처리 기록 보기','hospital','green');
   }
+  function responsePresentation(status){
+    return ({
+      accepted:{label:'수용 가능',tone:'green',icon:'✓',hint:'환자가 비교·선택할 수 있는 후보입니다.'},
+      rejected:{label:'수용 불가',tone:'red',icon:'×',hint:'이 기관을 제외하고 다른 후보를 확인합니다.'},
+      more:{label:'추가 정보 필요',tone:'amber',icon:'!',hint:'보완 회신 전에는 선택 후보에 포함하지 않습니다.'},
+      timeout:{label:'응답 기한 초과',tone:'amber',icon:'!',hint:'재문의하거나 다음 후보를 확인합니다.'},
+      withdrawn:{label:'문의 종료',tone:'neutral',icon:'—',hint:'진행 중인 수용 문의가 아닙니다.'}
+    })[status]||{label:'응답 대기',tone:'pending',icon:'◷',hint:'기관의 수용 여부 확인을 기다립니다.'};
+  }
   function sourceSegments(text){
     const fields={'회송 결정':['decision','context'],'필요 처치':['treatment','treatment'],'약제':['drug','medicine'],'용량':['dose','medicine'],'투여 간격':['interval','schedule'],'치료 기간':['period','schedule'],'격리 여부':['isolation','isolation'],'환자 선호':['preferences','preferences']};
     return String(text).split('\n').map(text=>{
@@ -71,7 +80,7 @@
       const value=text.slice(colon+1).trim();return {text,label,key:field[0],kind:field[1],value,missing:!value};
     });
   }
-  const api={facilityStatus,nextTask,sourceSegments};
+  const api={facilityStatus,nextTask,sourceSegments,responsePresentation};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.CareBridgeUX=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

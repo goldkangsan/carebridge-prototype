@@ -52,7 +52,13 @@
   }
   async function facilityReceipt(id,snapshot){
     for(let attempt=0;attempt<2;attempt++){
-      try{const start=performance.now(),r=await fetch('/api/facility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:M.facilityRequest(snapshot,id)}),signal:AbortSignal.timeout(6000)}),result=await r.json();apiCalls.unshift({action:M.facilities.find(f=>f.id===id).name+' 기관 시연 API',status:r.status,ms:Math.round(performance.now()-start),time:new Date().toISOString()});if(!r.ok)throw Error(result.error);return {id,receipt:result.receipt};}catch(e){if(attempt===1)return {id,error:true};}
+      try{
+        const start=performance.now(),r=await fetch('/api/facility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:M.facilityRequest(snapshot,id)}),signal:AbortSignal.timeout(6000)}),result=await r.json();
+        apiCalls.unshift({action:M.facilities.find(f=>f.id===id).name+' 기관 시연 API',status:r.status,ms:Math.round(performance.now()-start),time:new Date().toISOString()});
+        if(r.ok)return {id,receipt:result.receipt};
+        if(r.status>=400&&r.status<500)return {id,requestError:true,message:result.error||'문의 요약의 형식을 확인해 주세요.'};
+        if(attempt===1)return {id,requestError:true,message:'기관 문의 서버에 연결하지 못했습니다. 다시 시도해 주세요.'};
+      }catch(e){if(attempt===1)return e.name==='TimeoutError'||e.name==='AbortError'?{id,error:true}:{id,requestError:true,message:'기관 문의 통신을 완료하지 못했습니다. 다시 시도해 주세요.'};}
     }
   }
   async function kickAutomation(){
@@ -70,11 +76,15 @@
       }
       const round=state.round,pending=state.inquiries.filter(id=>!state.responses[id]);
       if(pending.length){
+        const inquiryReady=state.inquiryDraft&&['treatment','period','isolation'].every(k=>state.inquiryDraft.includes(M.fields[k]+': '+state.data[k]));
+        if(!basicMode&&!inquiryReady){liveMessage='문의 초안을 작성·검증한 뒤 기관에 전달합니다.';render();if(!await runAgent())return;}
+        if(!autoEnabled||epoch!==generation||state.stage!==2||!state.consent)return;
         liveMessage='Facility Agent · '+pending.length+'개 기관 시연 API에 동시 문의';render();
         if(basicMode){for(const id of pending){if(!autoEnabled||epoch!==generation||state.stage!==2)return;await act({type:'demoResponse',id},'simulation');}}
         else{
           const results=await Promise.all(pending.map(id=>facilityReceipt(id,JSON.parse(JSON.stringify(state)))));
-          for(const result of results){if(!autoEnabled||epoch!==generation||state.stage!==2||!state.consent||state.round!==round)return;if(state.responses[result.id])continue;await act(result.error?{type:'timeout',id:result.id}:{type:'receipt',receipt:result.receipt},'simulation');}
+          for(const result of results){if(!autoEnabled||epoch!==generation||state.stage!==2||!state.consent||state.round!==round)return;if(state.responses[result.id]||result.requestError)continue;await act(result.error?{type:'timeout',id:result.id}:{type:'receipt',receipt:result.receipt},'simulation');}
+          const failed=results.find(r=>r.requestError);if(failed){agentError=M.facilities.find(f=>f.id===failed.id).name+': '+failed.message;liveMessage='기관 문의 요청 확인 필요 · 무응답으로 처리하지 않았습니다.';render();return;}
         }
       }
       if(!autoEnabled||epoch!==generation||state.stage!==2||!state.consent)return;
@@ -100,9 +110,16 @@
     const status=statusBadge(U.facilityStatus(f,state));
     return `<article class="facility ${patient?'patient-facility':'staff-facility'} ${!f.eligible&&!patient?'excluded':''} ${compare.has(f.id)?'compare-selected':''} ${state.selected===f.id?'selection':''}">${photo(f,!patient)}<div class="facility-main"><div class="facility-title"><div><h3>${f.name}</h3><div class="type">${facilityType(f)} · ${f.area}</div></div>${status}</div><div class="match-score">조건 적합 점수 <b title="생활 조건 비교 점수이며 임상 적합성 평가가 아닙니다">${f.score}/100</b> <span>거리·비용·기관 평가·응답 이력</span></div><div class="facility-facts"><div><strong>${f.km} km</strong><span>보호자 거주지 기준</span></div><div><strong>${f.minutes}분</strong><span>예상 이동 시간</span></div><div><strong>${money(f.cost)}</strong><span>1일 예상 부담</span></div></div><div class="row capability-row">${capability('정맥 투여',f.iv)}${capability('격리 처치',f.isolation)}${!f.fresh?statusBadge({label:'기관 정보 재확인 필요',tone:'amber',icon:'!'}):''}</div>${state.lastAgent?.recommendations?.find(r=>r.id===f.id)?`<div class="recommendation-basis"><b>AI 추천 근거</b><ul>${state.lastAgent.recommendations.find(r=>r.id===f.id).basis.slice(0,3).map(x=>`<li>${displayFact(x)}</li>`).join('')}</ul></div>`:''}${f.response?.reason?`<p class="response-note"><b>기관 회신</b> ${displayFact(f.response.reason)}</p>`:''}${!f.eligible&&!patient?`<p class="exclusion-reason"><b>제외 사유</b> ${esc(f.reasons.join(' · '))}</p>`:''}</div><div class="facility-bottom"><span>${patient?'기관 회신과 생활 조건을 함께 확인해 주세요.':'정보 갱신 '+f.updated}</span><div class="row">${button('기관 정보 보기','detail','small',`data-id="${f.id}"`)}${patient&&M.accepted(state).length>1?button(compare.has(f.id)?'✓ 비교에 담음':'비교에 담기','compare',(compare.has(f.id)?'selected ':'')+'small',`data-id="${f.id}" aria-pressed="${compare.has(f.id)}"`):''}${patient?button('이 기관 선택','choose','primary small',`data-id="${f.id}"`):''}</div></div></article>`;
   }
-  function highlightedSource(){
-    return U.sourceSegments(state.source).map(line=>line.kind==='text'?`<p class="referral-note">${esc(line.text)||'&nbsp;'}</p>`:`<div class="referral-tag-row"><span class="referral-field-name">${esc(line.label)}</span><mark class="referral-token token-${line.missing?'missing':line.kind}">${line.missing?'<span aria-hidden="true">!</span> 미기재 · 보완 필요':esc(line.value)}</mark></div>`).join('');
+  function highlightedText(text,clean=false,supplements=null){
+    return U.sourceSegments(text).map(line=>{
+      if(line.kind==='text')return `<p class="referral-note">${(clean?displayFact(line.text):esc(line.text))||'&nbsp;'}</p>`;
+      let value;
+      if(line.missing&&supplements?.[line.key])value=`<div class="supplemented-field"><span class="source-origin">원문 미기재</span><mark class="referral-token token-${line.kind}">${esc(supplements[line.key])}</mark><span class="supplement-label">담당의 보완 회신</span></div>`;
+      else value=`<mark class="referral-token token-${line.missing?'missing':line.kind}">${line.missing?'<span aria-hidden="true">!</span> 미기재 · 보완 필요':(clean?displayFact(line.value):esc(line.value))}</mark>`;
+      return `<div class="referral-tag-row"><span class="referral-field-name">${esc(line.label)}</span>${value}</div>`;
+    }).join('');
   }
+  function highlightedSource(){return highlightedText(state.source,false,state.parsed?state.data:null);}
   function referralDocument(){
     return `<section class="referral-document" aria-labelledby="referral-document-title"><div class="referral-document-toolbar"><h3 id="referral-document-title">회송서 원문</h3><div class="referral-view-switch" role="group" aria-label="회송서 보기 방식">${button('항목 강조','source-preview',!sourceEditMode?'selected':'',`aria-pressed="${!sourceEditMode}"`)}${button('원문 편집','source-edit',sourceEditMode?'selected':'',`aria-pressed="${sourceEditMode}"`)}</div></div><div class="tagged-referral" id="referral-highlight" role="document" aria-label="원문 항목 강조" ${sourceEditMode?'hidden':''}>${highlightedSource()}</div><div class="field" id="referral-editor" ${!sourceEditMode?'hidden':''}><label class="referral-editor-label" for="referral-source">자유서술 회송서 · 시연용 편집</label><textarea id="referral-source" rows="12" spellcheck="false">${esc(state.source)}</textarea><p class="tiny">편집한 내용은 ‘항목 강조’에서 바로 확인할 수 있습니다.</p></div></section>`;
   }
@@ -179,6 +196,7 @@
     if(a==='basic-demo'){basicMode=true;agentError='';autoEnabled=true;save();render();kickAutomation();return;}
     if(a==='provider-save'){await act({type:'facilityUpdate',id:facility,beds:Number($('#provider-beds').value),iv:$('#provider-iv').checked,isolation:$('#provider-isolation').checked},'facility');return;}
     if(a==='agent-detail'){agentDetail();return;}
+    if(a==='agent-workflow'){close();goRole(nextRole());return;}
     if(a==='timeout-demo'){autoEnabled=false;save();const next=state.inquiries.find(id=>!state.responses[id]);if(next){await act({type:'timeout',id:next},'simulation');toast('무응답 예외를 기록했습니다. 자동 진행을 다시 켜면 나머지 문의를 처리합니다.');}return;}
     if(a==='consent-start'){if(!consentDraft){toast('먼저 기관 문의 동의를 확인해 주세요.',true);return;}if(await act({type:'consent',value:true},'patient'))consentDraft=false;return;}
     if(a==='clear-compare'){compare.clear();render();return;}
@@ -278,9 +296,18 @@
       const f=M.facilities.find(f=>f.name===dialog.querySelector('h2').textContent);dialog.querySelector('.dialog-body').insertAdjacentHTML('afterbegin',photo(f));dialog.querySelector('.dialog-body').insertAdjacentHTML('beforeend',`<h3>이동 경로 참고</h3><p class="tiny">OSRM 공개 API · 고정 시연 좌표 사용 · 실제 기관 위치 아님</p>${button('공개 경로 API 조회','route','',`data-id="${f.id}"`)}<div id="route-result" data-id="${f.id}"></div>`);
     }
   }
+  function replyQuote(text,status){
+    const expressions={accepted:/수용이 가능합니다|수용 가능합니다|수용 가능|희망 일정 수용/g,rejected:/수용할 수 없습니다|수용 불가|수용이 불가|수용할 수 없음/g,more:/보완이 필요합니다|보완이 필요|정보 보완|판단 전|아직 수용 가능 응답이 아닙니다/g,timeout:/응답 기한|확인하지 못했습니다/g};
+    const pattern=expressions[status];if(!pattern)return esc(text);let out='',from=0;
+    for(const match of String(text).matchAll(pattern)){out+=esc(String(text).slice(from,match.index))+`<mark class="reply-emphasis">${esc(match[0])}</mark>`;from=match.index+match[0].length;}
+    return out+esc(String(text).slice(from));
+  }
   function agentDetail(){
     const a=state.lastAgent;if(!a){toast('문의 동의 후 AI 분석이 진행됩니다.');return;}
-    modal('AI 추천·문의·회신 근거',`<p class="notice green">${esc(a.model)} · 실제 API 판단 · ${esc(a.actionLabel)}${a.cached?' · 검증 결과 재사용':''}</p><h3>환자 희망 조건</h3><p>${esc(M.profile(state).text)}</p><h3>매칭 점수와 AI 추천 근거</h3><p class="tiny">처치·거리·비용 상한을 코드로 검사한 뒤 다기준 점수로 정렬합니다. Gemini는 검증된 사실에서 추천 근거를 고릅니다. 점수는 임상적 적합성 평가가 아닙니다.</p>${a.recommendations.map(r=>`<section class="agent-evidence"><h3>${esc(M.facilities.find(f=>f.id===r.id).name)} · ${r.score}/100</h3><ul>${r.basis.map(x=>`<li>${displayFact(x)}</li>`).join('')}</ul></section>`).join('')}<h3>비식별 문의 초안</h3><p class="message-letter">${esc(state.inquiryDraft||'문의 초안 작성 전')}</p><h3>기관 회신 분석</h3>${a.interpretations.length?a.interpretations.map(r=>`<blockquote><b>${esc(M.facilities.find(f=>f.id===r.id).name)} · ${esc(responseNames[r.status]?.[0]||r.status)}</b><p>${esc(r.quote)}</p></blockquote>`).join(''):'<p class="tiny">기관 응답을 받은 뒤 원문 근거와 해석을 보여줍니다.</p>'}<h3>최근 AI 작업</h3><ol>${(state.agentRuns||[]).map(r=>`<li>${when(r.at)} · ${esc(r.model)} · ${esc(r.action)}</li>`).join('')}</ol><p class="tiny">실제 병원 연락·예약은 하지 않습니다. 문의·회신은 기관 시연 API이며 수용 결정·환자 선택·최종 확인은 별도 단계입니다.</p>`);
+    const replies=a.interpretations||[],count=status=>replies.filter(r=>r.status===status).length,n=count('accepted'),tone=n?'green':!replies.length?'pending':count('rejected')===replies.length?'red':'amber';
+    const title=n?`수용 가능한 기관 ${n}곳을 확인했습니다.`:count('more')?'추가 정보를 확인해야 수용 여부를 판단할 수 있습니다.':count('timeout')?'기관의 수용 응답을 확인하지 못했습니다.':replies.length?'현재 수용 가능한 기관이 없습니다.':'기관의 수용 응답을 기다립니다.';
+    const summary=`<section class="reply-overview overview-${tone}" aria-label="회신 분석 요약"><strong>${esc(title)}</strong><div class="row">${['accepted','rejected','more','timeout'].filter(status=>count(status)).map(status=>statusBadge({...U.responsePresentation(status),label:U.responsePresentation(status).label+' '+count(status)+'곳'})).join('')}</div><p>다음 작업: <b>${esc(a.actionLabel)}</b></p></section>`;
+    modal('AI 추천·문의·회신 근거',`<p class="tiny">${esc(a.model)} · ${when(a.at)} 분석${a.cached?' · 검증 결과 재사용':''}</p>${summary}<h3>환자 희망 조건</h3><p>${esc(M.profile(state).text)}</p>${a.recommendations.length?`<h3>매칭 점수와 AI 추천 근거</h3><p class="tiny">처치·거리·비용 상한을 검사한 뒤 다기준 점수로 정렬합니다. 점수는 임상적 적합성 평가가 아닙니다.</p>${a.recommendations.map(r=>`<section class="agent-evidence"><div class="row space"><h3>${esc(M.facilities.find(f=>f.id===r.id).name)}</h3><span class="evidence-score">조건 적합 점수 <b>${r.score}</b>/100</span></div><ul>${r.basis.map(x=>`<li>${displayFact(x)}</li>`).join('')}</ul></section>`).join('')}`:''}<h3>비식별 문의 초안</h3><div class="tagged-referral inquiry-highlight" aria-label="문의 초안 핵심 항목">${highlightedText(state.inquiryDraft||'문의 초안 작성 전',true)}</div><h3>기관 회신 분석</h3>${replies.length?replies.map(r=>{const presentation=U.responsePresentation(r.status);return `<article class="reply-card reply-${presentation.tone}" aria-label="${esc(M.facilities.find(f=>f.id===r.id).name+' '+presentation.label)}"><div class="reply-card-head"><h4>${esc(M.facilities.find(f=>f.id===r.id).name)}</h4>${statusBadge(presentation)}</div><p class="reply-quote">${replyQuote(r.quote,r.status)}</p><p class="reply-next">${esc(presentation.hint)}</p></article>`;}).join(''):'<p class="tiny">기관 응답을 받은 뒤 원문 근거와 해석을 보여줍니다.</p>'}<details class="agent-history"><summary>최근 AI 작업 기록</summary><ol>${(state.agentRuns||[]).map(r=>`<li>${when(r.at)} · ${esc(r.model)} · ${esc(r.action)}</li>`).join('')}</ol></details><p class="tiny">실제 병원 연락·예약은 하지 않습니다. 문의·회신은 기관 시연 API이며 수용 결정·환자 선택·최종 확인은 별도 단계입니다.</p>`,button('닫기','close')+button(state.stage===3?'후보 비교·선택으로':'다음 작업 확인','agent-workflow','primary'));
   }
   function renderTaskPanel(){
     if(view!=='case')return;
