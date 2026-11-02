@@ -45,8 +45,8 @@
     let detail='';
     switch(action.type){
       case 'attest': role('hospital');at(0);s.doctorApproved=!!action.value;detail='담당의의 비응급 회송 결정 확인 기록';break;
-      case 'source': role('hospital');at(0);s.source=String(action.value);s.parsed=false;s.data={};detail='가상 회송서 내용 수정';break;
-      case 'parse': role('hospital');at(0);need(s.doctorApproved,'담당의의 비응급 회송 결정을 먼저 확인해 주세요.');s.data=extract(s.source);s.parsed=true;detail='시연용 규칙 추출 및 필수 항목 점검';break;
+      case 'source': role('hospital');at(0);s.source=String(action.value);s.parsed=false;s.data={};s.extraction=null;detail='가상 회송서 내용 수정';break;
+      case 'parse': role('hospital');at(0);need(s.doctorApproved,'담당의의 비응급 회송 결정을 먼저 확인해 주세요.');s.data=extract(s.source);s.parsed=true;s.extraction=null;detail='시연용 규칙 추출 및 필수 항목 점검';break;
       case 'applyExtraction': role('hospital');at(0);need(s.doctorApproved,'담당의의 비응급 회송 결정을 먼저 확인해 주세요.');need(s.source===initial(s.scenario).source,'AI 분석은 준비된 가상 문서에만 사용할 수 있습니다.');need(action.result?.mode==='live'&&Object.keys(fields).every(k=>action.result.data?.[k]===extract(s.source)[k]),'AI 결과가 원문과 일치하지 않습니다.');s.data=action.result.data;s.parsed=true;s.extraction={model:action.result.model,at:action.result.at,cached:!!action.result.cached};detail='실제 AI API 문서 추출 · 원문 대조 완료';break;
       case 'supplement': role('hospital');at(0);need(s.parsed,'먼저 회송 정보를 구조화해 주세요.');need(action.confirmed,'담당의 보완 회신임을 확인해 주세요.');
         for(const k of missing(s)){need(String(action.values[k]||'').trim(),fields[k]+' 보완이 필요합니다.');s.data[k]=String(action.values[k]).trim();}detail='담당의 보완 회신 반영 (시연)';break;
