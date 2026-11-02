@@ -1,11 +1,11 @@
 {
   "name": "carebridge-prototype",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "engines": { "node": "22.x" },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test tests/model.test.cjs tests/api.test.mjs tests/deployment.test.mjs",
+    "test": "node --test tests/model.test.cjs tests/api.test.mjs tests/deployment.test.mjs tests/integrations.test.mjs",
     "dev": "node scripts/preview.mjs"
   }
 }
