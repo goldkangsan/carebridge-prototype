@@ -37,3 +37,9 @@ button,button.small{min-height:44px}button:disabled{opacity:.55}.tiny{font-size:
 @media(max-width:760px){.profile-options{grid-template-columns:repeat(2,minmax(0,1fr))}.match-score span{display:block;margin-top:3px}.staff-facility .match-score b{font-size:15px}.profile-options button{font-size:12px}.agent-evidence ul{padding-left:16px}}
 
 .brand{text-decoration:none;border-radius:8px;flex-shrink:0}.brand:hover strong{color:#3a448f}.brand:focus-visible{outline:3px solid #7087d3;outline-offset:5px}
+
+/* Readable referral document editor, including mobile text sizing. */
+.referral-document>span{font-size:16px;font-weight:700;color:var(--ink);margin-bottom:10px}
+.field #referral-source{font-size:16px;line-height:2;font-weight:400;color:#1c2638;min-height:440px;padding:20px 22px;border:1.5px solid #9aaac7;border-left:4px solid var(--navy);background:#fcfdff;letter-spacing:0;tab-size:2}
+.field #referral-source:focus{border-color:var(--navy);outline:3px solid #dfe5fa;outline-offset:2px;background:white}
+@media(max-width:760px){.field #referral-source{font-size:16px;min-height:520px;padding:16px;line-height:1.95}.referral-document>span{font-size:15px}}
