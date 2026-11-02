@@ -13,7 +13,7 @@ export function createIntegrations(M,{upstreamFetch=fetch,env=process.env}={}){
       if(!['normal','missing','unavailable'].includes(scenario)||[...url.searchParams.keys()].some(k=>k!=='scenario'))return json({error:'준비된 가상 문서만 분석할 수 있습니다.'},400);
       const key=scenario==='missing'?'missing':'normal';
       if(cache.has(key))return json({...cache.get(key),cached:true});
-      const token=env.AI_GATEWAY_API_KEY||env.VERCEL_OIDC_TOKEN;
+      const token=env.AI_GATEWAY_API_KEY||request.headers.get('x-vercel-oidc-token')||env.VERCEL_OIDC_TOKEN;
       if(!token)return json({error:'AI API 인증이 설정되지 않았습니다. 기본 항목 점검으로 시연을 계속할 수 있습니다.',code:'AI_AUTH_REQUIRED',mode:'unavailable'},503);
       try{
         const source=M.initial(scenario).source,properties=Object.fromEntries(Object.keys(M.fields).map(k=>[k,{type:'string'}]));
