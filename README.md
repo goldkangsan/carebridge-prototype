@@ -10,7 +10,7 @@ Course project for Healthcare Service Innovation, Department of Industrial Engin
 
 ## 실행
 
-Node.js 22 이상. `npm run dev`로 실행한 뒤 http://127.0.0.1:4175 를 엽니다. 기본 시연·공개 기관 검색·경로 API는 별도 키 없이 동작합니다. 실제 AI 분석에는 활성화된 Vercel AI Gateway 계정과 서버 인증이 필요합니다.
+Node.js 22 이상. `npm run dev`로 실행한 뒤 http://127.0.0.1:4175 를 엽니다. 기본 시연·공개 기관 검색·경로 API는 별도 키 없이 동작합니다. 실제 AI 분석에는 OpenAI·Gemini 직접 API 키 또는 활성화된 Vercel AI Gateway 인증이 필요합니다. 배포본은 Google Gemini 직접 연결을 사용합니다.
 
 `npm test`는 상태 전환·동의·역할·예외·HTTP API·배포 진입점을 검사합니다. `npm run build`는 정적 화면을 public/에 생성합니다.
 
@@ -32,7 +32,7 @@ GitHub에는 소스를 보관하고 Vercel에서 화면과 API를 함께 실행�
 
 OpenAI 직접 연결은 Production 환경변수 `OPENAI_API_KEY`, Gemini 직접 연결은 `GEMINI_API_KEY`를 등록합니다. 키가 있는 제공자를 자동 선택하며, 둘 다 등록한 경우 `LLM_PROVIDER=openai` 또는 `LLM_PROVIDER=gemini`로 선택합니다. 기본 모델은 각각 `gpt-4.1-mini`, `gemini-3.1-flash-lite`이며 `LLM_MODEL`로 바꿀 수 있습니다. 직접 연결은 Vercel AI Gateway 크레딧을 사용하지 않습니다. 키 등록 후 재배포해야 합니다.
 
-Gateway를 선택한 AI 분석은 요청별 `x-vercel-oidc-token` 또는 서버의 `AI_GATEWAY_API_KEY`를 사용합니다. 인증 정보를 브라우저에 노출하지 않습니다. AI Gateway 계정 승인·크레딧이 없으면 실제 분석을 완료한 것처럼 표시하지 않고 기본 항목 점검을 별도로 제공합니다. 2026-11-02 확인 당시 Gateway가 HTTP 403을 반환하여 결제수단 등록을 요구했습니다. 카드 등록은 사용자가 직접 수행해야 하며 임의로 결제·구매하지 않습니다. 계정 설정 후 서버 환경 변수 `AI_ANALYSIS_ENABLED=true`로 AI 버튼을 활성화할 수 있습니다. 현재는 비활성화하고 기본 항목 점검으로 데모를 진행합니다.
+Gateway를 선택한 AI 분석은 요청별 `x-vercel-oidc-token` 또는 서버의 `AI_GATEWAY_API_KEY`를 사용합니다. 인증 정보를 브라우저에 노출하지 않습니다. AI Gateway 계정 승인·크레딧이 없으면 실제 분석을 완료한 것처럼 표시하지 않고 기본 항목 점검을 별도로 제공합니다. 2026-11-02 확인 당시 Gateway가 HTTP 403을 반환하여 결제수단 등록을 요구했습니다. 카드 등록은 사용자가 직접 수행해야 하며 임의로 결제·구매하지 않습니다. 계정 설정 후 서버 환경 변수 `AI_ANALYSIS_ENABLED=true`로 AI 버튼을 활성화할 수 있습니다. 현재 배포본은 Gemini 키를 Production의 sensitive 환경변수로 등록하여 Gateway 없이 직접 분석합니다. 정상 문서와 투여 간격 누락 문서의 실제 API 응답 HTTP 200을 확인했습니다.
 
 - `web/`: 화면과 합성 데이터 모델
 - `worker/api.mjs`: 공통 Request/Response API
@@ -57,4 +57,4 @@ OSRM / © OpenStreetMap contributors. API 문서: https://project-osrm.org/docs/
 
 공개 기관 검색: OpenStreetMap / Nominatim. [이용 정책](https://operations.osmfoundation.org/policies/nominatim/). 세 지역의 제한된 사용자 요청만 처리하고 자동완성·주기적 수집은 하지 않습니다. 애플리케이션 식별 헤더, 함수 내 1.1초 호출 간격, 6시간 메모리·배포 CDN 캐시를 적용합니다. 소규모 수업 시연용으로 사용하며 대규모 공개 운영 전에 전용 제공자와 전역 호출 제한이 필요합니다. 서버 환경 변수 `HOSPITAL_DIRECTORY_API_URL`로 제공자를 교체할 수 있습니다.
 
-AI API: [Vercel AI Gateway OIDC](https://vercel.com/docs/ai-gateway/authentication-and-byok/oidc), 모델 `openai/gpt-4.1-mini`. 준비된 합성 문서의 검증된 응답은 24시간 배포 CDN 캐시를 사용합니다. AI 분석은 처방의 적절성이나 임상 안전성을 검증하지 않습니다.
+AI API: [Google Gemini OpenAI 호환 API](https://ai.google.dev/gemini-api/docs/openai), 현재 모델 `gemini-3.1-flash-lite`. OpenAI 직접 연결과 [Vercel AI Gateway OIDC](https://vercel.com/docs/ai-gateway/authentication-and-byok/oidc)도 선택 가능합니다. 준비된 합성 문서의 검증된 응답은 24시간 배포 CDN 캐시를 사용합니다. AI 분석은 처방의 적절성이나 임상 안전성을 검증하지 않습니다.
