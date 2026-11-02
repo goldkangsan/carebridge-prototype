@@ -4,7 +4,8 @@ import {resolve} from 'node:path';
 import M from '../web/model.js';
 import {createApi} from '../worker/api.mjs';
 import {createIntegrations} from '../worker/integrations.mjs';
-const integrations=createIntegrations(M);
+import {createAgentApi,createFacilityApi} from '../worker/agents.mjs';
+const integrations=createIntegrations(M),agent=createAgentApi(M),facility=createFacilityApi(M);
 const api=createApi(M),root=resolve(import.meta.dirname,'../web');
 const types={html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',jpg:'image/jpeg'};
 createServer(async(req,res)=>{try{
@@ -12,7 +13,7 @@ createServer(async(req,res)=>{try{
   if(url.pathname.startsWith('/api/')){
     const chunks=[];for await(const c of req)chunks.push(c);
     const request=new Request(url,{method:req.method,headers:req.headers,...(!['GET','HEAD'].includes(req.method)?{body:Buffer.concat(chunks)}:{})});
-    const result=await integrations(request)||await api(request);res.writeHead(result.status,Object.fromEntries(result.headers));res.end(Buffer.from(await result.arrayBuffer()));return;
+    const result=await agent(request)||await facility(request)||await integrations(request)||await api(request);res.writeHead(result.status,Object.fromEntries(result.headers));res.end(Buffer.from(await result.arrayBuffer()));return;
   }
   const path=resolve(root,'.'+(url.pathname==='/'?'/index.html':decodeURIComponent(url.pathname)));
   if(!path.startsWith(root+'/')){res.writeHead(403);res.end();return;}

@@ -7,12 +7,14 @@
     if(status==='accepted')return {label:'수용 가능 응답',tone:'green',icon:'✓'};
     if(status==='rejected')return {label:'수용 불가 응답',tone:'red',icon:'×'};
     if(status==='more')return {label:'추가 정보 필요',tone:'amber',icon:'!'};
+    if(status==='timeout')return {label:'응답 기한 초과',tone:'amber',icon:'!'};
     if(status==='withdrawn')return {label:'문의 종료',tone:'neutral',icon:'—'};
     return s.inquiries.includes(f.id)?{label:'기관 응답 대기',tone:'pending',icon:'◷'}:{label:'수용 확인 전',tone:'amber',icon:'!'};
   }
   function nextTask(s,role,o={}){
     const make=(title,description,action,label,owner=role,tone='navy',id)=>({title,description,action,label,owner:owners[owner],tone,id});
     const switchTo=(owner,title,description)=>make(title,description,'go-'+owner,owners[owner]+' 화면으로',owner);
+    if(o.agentError&&(s.stage===1||s.stage===2))return make('AI 업무 판단을 완료하지 못했습니다.','입력과 진행 상태는 유지했습니다. 다시 시도하거나 아래 AI 연계 진행에서 기본 시연을 선택할 수 있습니다.','retry-agent','AI 다시 시도',role,'amber');
     if(s.stage===0){
       if(role!=='hospital')return switchTo('hospital','의뢰기관의 회송 정보 확인이 필요합니다.','시연에서는 의뢰기관 화면으로 이동해 회송서 확인을 진행합니다.');
       if(!s.doctorApproved)return make('먼저 담당의의 회송 결정을 확인해 주세요.','아래 회송서를 읽고, 담당의가 비응급 회송을 결정했는지 직접 확인합니다.','focus-attest','회송 결정 확인하기');
@@ -24,6 +26,7 @@
       if(role!=='patient')return switchTo('patient','기관 문의에 앞서 환자 동의가 필요합니다.','시연에서는 환자·보호자 화면에서 희망 조건과 문의 동의를 확인합니다.');
       return make('희망 조건을 확인하고 기관 탐색을 시작해 주세요.','동의 항목을 체크한 뒤 시작 버튼을 누르면 문의와 모의 응답 수집이 자동으로 진행됩니다.',o.consentDraft?'consent-start':'focus-consent',o.consentDraft?'동의하고 기관 찾기':'문의 동의 확인하기');
     }
+    if(s.stage===1&&s.consent&&o.noCandidates)return role==='patient'?make('희망 조건을 충족하는 기관이 없습니다.','비용·이동 조건을 다시 선택하거나 담당자에게 예외 처리를 요청해 주세요.','focus-preferences','희망 조건 다시 확인','patient','amber'):switchTo('patient','조건 조정이 필요합니다.','현재 조건에 맞는 기관이 없습니다. 환자·보호자와 조건을 다시 확인합니다.');
     if(s.stage===1){
       if(o.auto)return make('조건에 맞는 기관에 문의를 준비하고 있습니다.','환자 동의를 확인했습니다. 자동 문의가 시작될 때까지 기다려 주세요.',null,null,'hospital','pending');
       return role==='hospital'?make('환자 동의를 확인했습니다.','비식별 요약을 조건에 맞는 기관에 보냅니다.','send','수용 문의 보내기'):switchTo('hospital','기관 문의를 시작할 수 있습니다.','의뢰기관에서 비식별 요약을 문의 대상 기관에 보냅니다.');
@@ -42,6 +45,7 @@
     }
     if(s.stage===3){
       if(role!=='patient')return switchTo('patient','환자·보호자가 기관을 선택할 차례입니다.','수용이 확인된 기관의 거리·비용·처치 정보를 비교한 뒤 직접 선택합니다.');
+      if(o.acceptedCount===1)return make('현재 조건에서 수용이 확인된 기관은 한 곳입니다.','기관 정보와 추천 근거를 확인한 뒤 선택하거나, 목록 아래에서 조건을 바꿔 다시 찾을 수 있습니다.','focus-candidates','기관 정보 살펴보기');
       return make('수용이 확인된 기관을 비교하고 선택해 주세요.','두 곳 이상을 비교에 담거나, 원하는 기관의 선택 버튼을 눌러 상세 동의를 확인합니다.',o.compareCount>=2?'open-compare':'focus-candidates',o.compareCount>=2?'담은 기관 비교하기':'기관 목록 살펴보기');
     }
     if(s.stage===4){
