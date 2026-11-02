@@ -1,6 +1,12 @@
 # CareBridge · 케어브릿지
 
-비응급 전원·회송 결정 이후부터 수용기관의 첫 진료 회신과 의뢰기관 확인까지 시연하는 수업 프로젝트 프로토타입입니다.
+**서울대학교 산업공학과 「헬스케어 서비스 혁신」 수업 팀 프로젝트**
+
+CareBridge는 비응급 전원·회송 결정 이후부터 수용기관의 첫 진료 회신과 의뢰기관 확인까지 시연하는 서비스 프로토타입입니다. 기관 탐색·수용 문의·정보 보완 과정의 반복 업무를 줄이고, 환자·보호자와 의료기관 사이의 연계를 지원하는 흐름을 설계했습니다.
+
+Course project for Healthcare Service Innovation, Department of Industrial Engineering, Seoul National University.
+
+**[프로토타입 체험하기](https://carebridge-prototype-gilt.vercel.app)**
 
 ## 실행
 
