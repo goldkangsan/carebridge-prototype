@@ -13,14 +13,14 @@
   }
   function nextTask(s,role,o={}){
     const make=(title,description,action,label,owner=role,tone='navy',id)=>({title,description,action,label,owner:owners[owner],tone,id});
-    const switchTo=(owner,title,description)=>make(title,description,'go-'+owner,owners[owner]+' 화면으로',owner);
-    if(o.agentError&&(s.stage===1||s.stage===2))return make('AI 업무 판단을 완료하지 못했습니다.','입력과 진행 상태는 유지했습니다. 다시 시도하거나 아래 AI 연계 진행에서 기본 시연을 선택할 수 있습니다.','retry-agent','AI 다시 시도',role,'amber');
+    const switchTo=(owner,title,description)=>make(title,description,'go-'+owner,owners[owner]+' 화면 시연',owner);
+    if(o.agentError&&(s.stage===1||s.stage===2))return make('AI 업무 판단을 완료하지 못했습니다.','입력과 진행 상태는 유지했습니다. 다시 시도하거나 아래 문의 진행 화면에서 기본 시연을 선택할 수 있습니다.','retry-agent','AI 다시 시도',role,'amber');
     if(s.stage===0){
       if(role!=='hospital')return switchTo('hospital','의뢰기관의 회송 정보 확인이 필요합니다.','시연에서는 의뢰기관 화면으로 이동해 회송서 확인을 진행합니다.');
       if(!s.doctorApproved)return make('먼저 담당의의 회송 결정을 확인해 주세요.','아래 회송서를 읽고, 담당의가 비응급 회송을 결정했는지 직접 확인합니다.','focus-attest','회송 결정 확인하기');
-      if(!s.parsed)return make('회송서에서 필요한 정보를 정리해 주세요.','분석 결과를 원문과 비교합니다. 문서에 없는 처방 정보는 임의로 채우지 않습니다.',o.canAI?'ai-parse':'parse',o.canAI?'AI로 회송서 분석하기':'회송 정보 점검하기');
-      if(o.missing?.length)return make('누락된 정보를 먼저 보완해 주세요.','누락 항목: '+o.missing.join(', ')+'. 담당의의 보완 회신을 받은 뒤 다음 단계로 이동합니다.','supplement','보완 회신 입력하기','hospital','amber');
-      return make('회송 정보가 정리됐습니다.','처치 조건과 이동 범위에 맞는 후보 기관을 확인합니다. 수용 여부는 기관 응답으로 별도 확인합니다.','ready','후보 기관 확인하기');
+      if(!s.parsed)return make('회송서에서 필요한 정보를 정리해 주세요.','분석 결과를 원문과 비교합니다. 문서에 없는 처방 정보는 임의로 채우지 않습니다.','review-referral','회송 정보 확인');
+      if(o.missing?.length)return make('누락된 정보를 먼저 보완해 주세요.','누락 항목: '+o.missing.join(', ')+'. 담당의의 보완 회신을 받은 뒤 다음 단계로 이동합니다.','supplement','담당의 보완 회신 입력','hospital','amber');
+      return make('회송 정보가 정리됐습니다.','처치 조건과 이동 범위에 맞는 후보 기관을 확인합니다. 수용 여부는 기관 응답으로 별도 확인합니다.','ready','확인하고 기관 문의 준비');
     }
     if(s.stage===1&&!s.consent){
       if(role!=='patient')return switchTo('patient','기관 문의에 앞서 환자 동의가 필요합니다.','시연에서는 환자·보호자 화면에서 희망 조건과 문의 동의를 확인합니다.');
@@ -46,7 +46,7 @@
     if(s.stage===3){
       if(role!=='patient')return switchTo('patient','환자·보호자가 기관을 선택할 차례입니다.','수용이 확인된 기관의 거리·비용·처치 정보를 비교한 뒤 직접 선택합니다.');
       if(o.acceptedCount===1)return make('현재 조건에서 수용이 확인된 기관은 한 곳입니다.','기관 정보와 추천 근거를 확인한 뒤 선택하거나, 목록 아래에서 조건을 바꿔 다시 찾을 수 있습니다.','focus-candidates','기관 정보 살펴보기');
-      return make('수용이 확인된 기관을 비교하고 선택해 주세요.','두 곳 이상을 비교에 담거나, 원하는 기관의 선택 버튼을 눌러 상세 동의를 확인합니다.',o.compareCount>=2?'open-compare':'focus-candidates',o.compareCount>=2?'담은 기관 비교하기':'기관 목록 살펴보기');
+      return make('수용이 확인된 기관을 비교하고 선택해 주세요.','이동 시간과 하루 예상 비용을 나란히 비교합니다. 선택한 뒤 해당 기관의 정보 제공에 별도로 동의합니다.',o.compareCount>=2?'open-compare':'focus-candidates',o.compareCount>=2?'담은 기관 비교하기':'병원 비교 보기');
     }
     if(s.stage===4){
       if(role!=='hospital')return switchTo('hospital','의뢰기관에서 전원 준비를 진행합니다.','서류·이동 일정·환자 안내를 확인한 뒤 기존 절차에 따라 전달합니다.');
