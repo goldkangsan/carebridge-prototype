@@ -31,16 +31,16 @@ export function createIntegrations(M,{upstreamFetch=fetch,env=process.env}={}){
       if(!areas[area])return json({error:'검색 지역을 확인해 주세요.'},400);
       const key='hospitals:'+area,prior=cache.get(key);
       if(prior&&Date.now()-Date.parse(prior.at)<21600000)return json({...prior,cached:true});
-      const [lat,lon]=areas[area],query=`[out:json][timeout:8];nwr["amenity"="hospital"]["name"](around:7000,${lat},${lon});out center tags 24;`;
-      for(const base of ['https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter']){
-        try{
-          const response=await upstreamFetch(base+'?data='+encodeURIComponent(query),{headers,signal:AbortSignal.timeout(7000)});
-          if(!response.ok)continue;
-          const data=await response.json(),seen=new Set(),items=[];
-          for(const item of data.elements||[]){const tags=item.tags||{},lat=item.lat??item.center?.lat,lon=item.lon??item.center?.lon;if(!tags.name||!Number.isFinite(lat)||!Number.isFinite(lon)||seen.has(tags.name))continue;seen.add(tags.name);const website=tags.website||tags['contact:website'];items.push({id:item.type+'/'+item.id,name:tags['name:ko']||tags.name,lat,lon,address:[tags['addr:city'],tags['addr:district'],tags['addr:street'],tags['addr:housenumber']].filter(Boolean).join(' '),phone:tags.phone||tags['contact:phone']||null,website:/^https?:\/\//.test(website||'')?website:null,url:'https://www.openstreetmap.org/'+item.type+'/'+item.id});}
-          const result={items,area,center:{lat,lon},provider:'OpenStreetMap / Overpass API',mode:'live',at:new Date().toISOString(),capacityAvailable:false,clinicalCapabilitiesVerified:false};cache.set(key,result);return json(result);
-        }catch{}
-      }
+      const [lat,lon]=areas[area];
+      try{
+        const params=new URLSearchParams({q:'hospital',viewbox:[lon-.08,lat+.063,lon+.08,lat-.063].join(','),bounded:'1',format:'jsonv2',limit:'16',addressdetails:'1',extratags:'1','accept-language':'ko'});
+        const response=await upstreamFetch('https://nominatim.openstreetmap.org/search?'+params,{headers,signal:AbortSignal.timeout(10000)});
+        if(!response.ok)throw Error('DirectoryUnavailable');
+        const data=await response.json(),seen=new Set(),items=[];
+        if(!Array.isArray(data))throw Error('InvalidDirectory');
+        for(const item of data){const tags=item.extratags||{},lat=Number(item.lat),lon=Number(item.lon);if(!item.name||item.type!=='hospital'||!['node','way','relation'].includes(item.osm_type)||!/^\d+$/.test(String(item.osm_id))||!Number.isFinite(lat)||!Number.isFinite(lon)||seen.has(item.name))continue;seen.add(item.name);const website=tags.website||tags['contact:website'];items.push({id:item.osm_type+'/'+item.osm_id,name:item.name,lat,lon,address:item.display_name||'',phone:tags.phone||tags['contact:phone']||null,website:/^https?:\/\//.test(website||'')?website:null,url:'https://www.openstreetmap.org/'+item.osm_type+'/'+item.osm_id});}
+        const result={items,area,center:{lat,lon},provider:'OpenStreetMap / Nominatim API',mode:'live',at:new Date().toISOString(),capacityAvailable:false,clinicalCapabilitiesVerified:false};cache.set(key,result);return json(result);
+      }catch{}
       return json({error:'공개 의료기관 지도 정보에 연결하지 못했습니다. 다시 시도해 주세요.',mode:'unavailable'},503);
     }
     return null;
