@@ -6,6 +6,7 @@ export function createIntegrations(M,{upstreamFetch=fetch,env=process.env}={}){
   const cache=new Map();
   return async request=>{
     const url=new URL(request.url);
+    if(!['/api/extract','/api/hospitals'].includes(url.pathname))return null;
     if(request.method!=='GET')return json({error:'GET 요청만 지원합니다.'},405);
     if(url.pathname==='/api/extract'){
       const scenario=url.searchParams.get('scenario')||'normal';
