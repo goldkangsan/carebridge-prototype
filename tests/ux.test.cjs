@@ -65,3 +65,22 @@ test('간략 진행 표시는 미완료 진료 확인을 완료로 표시하지 
  assert.deepEqual(U.journey(6).map(x=>x.status),['done','done','done','current']);
  assert.ok(U.journey(7).every(x=>x.status==='done'));
 });
+
+test('의료기관 업무 목록은 보완·재탐색·미이행을 처리 필요로 구분',()=>{
+ const base={stage:2,inquiries:['a','b'],responses:{a:{status:'rejected'},b:{status:'more'}}};
+ assert.equal(U.workItem(base,'hospital').actionable,true);assert.match(U.workItem(base,'hospital').next,/보완/);
+ assert.match(U.workItem({...base,responses:{a:{status:'rejected'},b:{status:'timeout'}}},'hospital').next,/재탐색/);
+ assert.equal(U.workItem({...base,responses:{a:{status:'accepted'}}},'hospital',null,{auto:true}).actionable,false);
+ assert.equal(U.workItem({...base,responses:{a:{status:'accepted'}}},'hospital',null,{auto:false}).actionable,true);
+ assert.match(U.workItem({stage:6,visit_result:'missed'},'hospital').next,/재연계/);
+});
+test('수용기관은 자기 문의의 보완 회신과 첫 진료 요청만 처리',()=>{
+ assert.equal(U.workItem({stage:2,response:'more'},'facility','a').actionable,false);
+ assert.equal(U.workItem({stage:2,response:'more',information_provided:true},'facility','a').actionable,true);
+ assert.equal(U.workItem({stage:5,selected:'a'},'facility','a').actionable,true);
+ assert.equal(U.workItem({stage:5,selected:'b'},'facility','a').done,true);
+});
+test('비교에 담은 기관은 현재 수용 확인 후보로 제한하고 중복 제거',()=>{
+ assert.deepEqual(U.comparisonIds([{id:'a'},{id:'b'}],['a','rejected','a','b']),['a','b']);
+ assert.deepEqual(U.comparisonIds([{id:'b'}],['a']),[]);
+});

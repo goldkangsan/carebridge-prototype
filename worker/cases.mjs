@@ -23,7 +23,7 @@ export function projectState(M,state,grant){
 }
 export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agent=createAgentApi(M),facility=createFacilityApi(M)}={}){
  const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}});
- const response=(row,grant,extra={})=>json({id:row.id,revision:row.revision,profileRevision:row.profileRevision||'',state:projectState(M,row.state,grant),role:grant.role,facility:grant.facility||null,synthetic:true,...(grant.role==='hospital'&&grant.rawAccess&&row.state.accessVersion===2?{credentials:credentialsFor(M,grant.rawAccess)}:{}),...extra});
+ const response=(row,grant,extra={})=>json({id:row.id,revision:row.revision,profileRevision:row.profileRevision||'',updatedAt:row.updated_at||null,state:projectState(M,row.state,grant),role:grant.role,facility:grant.facility||null,synthetic:true,...(grant.role==='hospital'&&grant.rawAccess&&row.state.accessVersion===2?{credentials:credentialsFor(M,grant.rawAccess)}:{}),...extra});
  return async request=>{
   const url=new URL(request.url);if(url.pathname!=='/api/cases')return null;
   if(request.method==='GET'&&url.searchParams.get('status')==='1')return json({available:configured(),storage:configured()?'postgresql':'unavailable',syntheticOnly:true});

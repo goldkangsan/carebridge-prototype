@@ -92,7 +92,27 @@
     const label=target==='patient'?(stage===1?'문의 동의':'병원 선택'):(stage===2?'수용 응답':'첫 진료 회신');
     return {copied,at:copied?saved.at:null,response,label,waiting:label+' 대기',complete:label+' 완료'};
   }
-  const api={facilityStatus,nextTask,sourceSegments,responsePresentation,journey,handoffStatus};
+  function workItem(c,role,facility,{auto=true}={}){
+    const done=c.stage===7||role==='facility'&&c.stage>=4&&c.selected!==facility;
+    const owner=['의뢰기관',c.consent?'의뢰기관':'환자·보호자','수용기관','환자·보호자','의뢰기관','수용기관','의뢰기관','완료'][c.stage];
+    let actionable=false,next='상대방 응답 확인',label='응답 대기';
+    if(done)return {done:true,actionable:false,owner:'완료',next:c.stage===7?'처리 기록 확인':'다른 기관 선택으로 문의 종료',label:'완료'};
+    if(role==='hospital'){
+      if([0,4,6].includes(c.stage)){actionable=true;next=({0:'회송 정보 확인',4:'방문 안내·전원 준비',6:c.visit_result==='missed'?'미이행 사유 확인·재연계':'첫 진료 회신 최종 확인'})[c.stage];}
+      if(c.stage===1){actionable=!!c.consent&&!auto;next=c.consent?'기관 문의 진행':'환자 동의 요청·확인';}
+      if(c.stage===2){const ids=c.inquiries||[],rs=ids.map(id=>c.responses?.[id]);const complete=ids.length>0&&rs.every(Boolean),accepted=rs.some(r=>r?.status==='accepted');if(complete&&!accepted){actionable=true;next=rs.some(r=>r.status==='more')?'기관 요청 정보 보완':'수용 불가 사유 확인·재탐색';}else if(accepted&&!auto){actionable=true;next='수용 확인 후보 안내';}else next='기관 수용 응답 확인';}
+      if(c.stage===3)next='환자 병원 선택 요청·확인';if(c.stage===5)next='기관 첫 진료 회신 요청·확인';
+    }else if(role==='patient'){
+      actionable=c.stage===1&&!c.consent||c.stage===3;
+      next=c.stage===1&&!c.consent?'희망 조건·문의 동의':c.stage===3?'병원 비교·선택':c.stage>=4?'방문 안내·진행 상황 확인':'병원 안내 기다리기';
+    }else{
+      actionable=c.stage===2&&(!c.response||c.response==='more'&&c.information_provided)||c.stage===5&&c.selected===facility;
+      next=c.stage===2?(c.response==='more'&&c.information_provided?'보완 정보 확인 후 응답':!c.response?'새 수용 문의 응답':'의뢰기관·환자 응답 기다리기'):c.stage===5?'첫 진료 이행 회신':'연계 진행 상황 확인';
+    }
+    if(actionable)label='처리 필요';return {done:false,actionable,owner,next,label};
+  }
+  function comparisonIds(accepted,selected){const allowed=new Set(accepted.map(f=>f.id));return [...new Set(selected)].filter(id=>allowed.has(id));}
+  const api={facilityStatus,nextTask,sourceSegments,responsePresentation,journey,handoffStatus,workItem,comparisonIds};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.CareBridgeUX=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
