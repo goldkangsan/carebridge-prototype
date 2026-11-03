@@ -2,10 +2,18 @@
   "name": "carebridge-prototype",
   "version": "5.0.0",
   "private": true,
-  "engines": { "node": "22.x" },
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test tests/model.test.cjs tests/api.test.mjs tests/deployment.test.mjs tests/integrations.test.mjs tests/ux.test.cjs tests/agents.test.mjs",
+    "test": "node --test tests/model.test.cjs tests/api.test.mjs tests/deployment.test.mjs tests/integrations.test.mjs tests/ux.test.cjs tests/agents.test.mjs tests/cases.test.mjs",
     "dev": "node scripts/preview.mjs"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.14"
   }
 }
