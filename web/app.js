@@ -529,7 +529,7 @@
 
   function handoffProgress(target){
     const h=U.handoffStatus(state,target),copy=h.copied?'링크 복사 완료':'링크 복사 전';
-    return `<section class="handoff-progress" aria-label="요청과 응답 상태"><h3>${target==='patient'?'환자·보호자':'수용기관'} 요청 현황</h3><ol><li class="done"><span aria-hidden="true">✓</span>요청 링크 준비됨</li><li class="${h.copied?'done':'pending'}"><span aria-hidden="true">${h.copied?'✓':'2'}</span>${copy}${h.at?`<small>${when(h.at)}</small>`:''}</li><li class="${h.response?'done':'pending'}"><span aria-hidden="true">${h.response?'✓':'3'}</span>${h.response?h.complete:h.waiting}</li></ol><p class="tiny">링크 복사는 발송·읽음 확인이 아닙니다. ${h.response?'상대방이 기록한 응답을 확인했습니다.':'상대방이 응답해야 다음 단계로 진행됩니다.'}</p></section>`;
+    return `<section class="handoff-progress" aria-label="요청과 응답 상태"><h3>${target==='patient'?'환자·보호자':'수용기관'} 요청 현황</h3><ol><li class="done"><span aria-hidden="true">✓</span>요청 링크 준비됨</li><li class="${h.copied?'done':'awaiting'}"><span aria-hidden="true">${h.copied?'✓':'2'}</span>${copy}${h.at?`<small>${when(h.at)}</small>`:''}</li><li class="${h.response?'done':'awaiting'}"><span aria-hidden="true">${h.response?'✓':'3'}</span>${h.response?h.complete:h.waiting}</li></ol><p class="tiny">링크 복사는 발송·읽음 확인이 아닙니다. ${h.response?'상대방이 기록한 응답을 확인했습니다.':'상대방이 응답해야 다음 단계로 진행됩니다.'}</p></section>`;
   }
   function renderJourney(){
     if(view!=='case')return;
