@@ -328,6 +328,9 @@
   }
 
   function render(){
+    const workspace=['home','not-found'].includes(view)?'home':role;
+    document.body.dataset.workspace=workspace;
+    document.title=workspace==='home'?'케어브릿지 · 전원·회송 연계':roles[role]+' · 케어브릿지';
     if(sharedLoading){$('#app').innerHTML='<main id="main" class="portal-main"><h1>진행 기록을 불러오고 있어요</h1><p role="status">잠시만 기다려 주세요.</p></main>';return;}
     if(sharedError){$('#app').innerHTML=`<main id="main" class="portal-main"><h1>진행 기록 확인이 필요합니다</h1><p class="notice amber">${esc(sharedError)}</p>${button('다시 불러오기','shared-refresh','primary')}${button('새 회송 시작','reset','small')}</main>`;return;}
     renderBase();enhance();enhanceUX();enhanceShared();const skip=$('.skip');if(skip&&location.protocol!=='file:')skip.href=location.pathname+location.hash;if(working)setBusy(true);
