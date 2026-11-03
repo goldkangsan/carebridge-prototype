@@ -112,3 +112,6 @@ body[data-workspace]:not([data-workspace="home"]) :is(.reply-overview:not(.overv
 body[data-workspace]:not([data-workspace="home"]) :is(.task-panel,.reply-overview:not(.overview-green):not(.overview-red):not(.overview-amber)){border-left-color:var(--workspace-accent)}
 body[data-workspace]:not([data-workspace="home"]) :is(th,.facility-bottom,.pending,.support-details>summary){background:var(--workspace-surface)}
 body[data-workspace]:not([data-workspace="home"]) .field #referral-source:focus{outline-color:var(--workspace-wash);border-color:var(--workspace-accent)}
+
+/* The brand stays consistent across all role workspaces. */
+.brand{--navy:#171e64;--accent-hover:#3a448f;--accent-focus:#7087d3}
