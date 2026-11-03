@@ -13,7 +13,7 @@
   }
   function nextTask(s,role,o={}){
     const make=(title,description,action,label,owner=role,tone='navy',id)=>({title,description,action,label,owner:owners[owner],tone,id});
-    const switchTo=(owner,title,description)=>role==='hospital'&&owner!=='hospital'?make(title,owner==='patient'?'요청 링크를 환자·보호자에게 전달하고 응답을 기다립니다.':'해당 기관에 요청 링크를 전달하고 회신을 기다립니다.','request-handoff',owner==='patient'?'환자 요청 링크 준비':'기관 요청 링크 준비',owner,'navy',owner):make(title,description.replace(/[^.]*화면으로 이동[^.]*\./g,'진행 상태는 자동으로 갱신됩니다.'),null,null,owner,'pending');
+    const switchTo=(owner,title,description)=>role==='hospital'&&owner!=='hospital'?make(title,owner==='patient'?'요청 링크를 환자·보호자에게 전달해 주세요. 링크 복사와 상대방의 응답은 따로 확인합니다.':'해당 기관에 요청 링크를 전달해 주세요. 기관의 회신이 도착하면 상태가 바뀝니다.','request-handoff',owner==='patient'?(s.stage===3?'환자에게 병원 선택 요청':'환자에게 동의 요청'):(s.stage===5?'기관에 첫 진료 회신 요청':'기관에 수용 응답 요청'),owner,'navy',owner):make(title,description.replace(/[^.]*화면으로 이동[^.]*\./g,'진행 상태는 자동으로 갱신됩니다.'),null,null,owner,'pending');
     if(o.agentError&&(s.stage===1||s.stage===2))return make('AI 업무 판단을 완료하지 못했습니다.','입력과 진행 상태는 유지했습니다. 다시 시도하거나 아래 문의 진행 화면에서 기본 점검을 선택할 수 있습니다.','retry-agent','AI 다시 시도',role,'amber');
     if(s.stage===0){
       if(role!=='hospital')return switchTo('hospital','의뢰기관의 회송 정보 확인이 필요합니다.','의뢰기관 화면으로 이동해 회송서 확인을 진행합니다.');
@@ -51,6 +51,8 @@
     if(s.stage===4){
       if(role!=='hospital')return switchTo('hospital','의뢰기관에서 전원 준비를 진행합니다.','서류·이동 일정·환자 안내를 확인한 뒤 기존 절차에 따라 전달합니다.');
       const n=Object.values(s.prep).filter(Boolean).length;
+      if(s.requiresSchedule&&!s.transferPlan?.confirmed)return make('먼저 방문 일시와 장소를 등록해 주세요.','수용기관과 확인한 방문 안내를 저장한 뒤 서류·이동·환자 안내를 확인합니다.','focus-plan','방문 안내 작성하기');
+      if(s.transferPlan&&n<3)return make('방문 안내를 저장했습니다. 준비 확인 '+(3-n)+'개가 남았습니다.','다음 확인: '+(!s.prep.documents?'회송 서류와 원 처방':!s.prep.transport?'이동·입원 일정':'환자·보호자 안내')+'. 실제로 확인한 항목만 체크해 주세요.','focus-prep','남은 준비 항목 확인');
       return n===3?make('전원 준비 확인을 마쳤습니다.','기존 공식 회송 절차의 전달 기록을 생성하고 첫 진료 회신을 기다립니다.','handoff','준비 완료하고 전달하기'):make('전원에 필요한 준비를 확인해 주세요.','준비 확인 '+n+'/3개. 실제 확인이 끝난 항목만 체크합니다.','focus-prep','준비 체크리스트로 이동');
     }
     if(s.stage===5){
@@ -80,7 +82,17 @@
       const value=text.slice(colon+1).trim();return {text,label,key:field[0],kind:field[1],value,missing:!value};
     });
   }
-  const api={facilityStatus,nextTask,sourceSegments,responsePresentation};
+  function journey(stage){
+    const current=stage===0?0:stage<=2?1:stage<=4?2:3;
+    return ['정보 확인','기관 문의','선택·준비','진료 확인'].map((label,index)=>({label,status:stage===7||index<current?'done':index===current?'current':'upcoming'}));
+  }
+  function handoffStatus(s,target,stage=s.stage){
+    const response=target==='patient'?(stage===1?s.consent===true:!!s.selected&&s.shareConsent===true):(stage===2?s.inquiries.length>0&&s.inquiries.every(id=>!!s.responses[id]):!!s.visit);
+    const saved=s.handoffs?.[target],copied=saved?.stage===stage&&saved.round===(s.round||0);
+    const label=target==='patient'?(stage===1?'문의 동의':'병원 선택'):(stage===2?'수용 응답':'첫 진료 회신');
+    return {copied,at:copied?saved.at:null,response,label,waiting:label+' 대기',complete:label+' 완료'};
+  }
+  const api={facilityStatus,nextTask,sourceSegments,responsePresentation,journey,handoffStatus};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.CareBridgeUX=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

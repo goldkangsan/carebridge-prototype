@@ -43,3 +43,25 @@ test('원문 강조는 빈 값만 누락으로 표시하고 없음이나 참조�
 test('원문 메타데이터나 HTML 문자열을 알려진 임상 항목으로 오인하지 않음',()=>{const lines=U.sourceSegments('__proto__: 테스트\nconstructor: 테스트\n약제: <b>표시 확인</b>');assert.equal(lines[0].kind,'text');assert.equal(lines[1].kind,'text');assert.equal(lines[2].value,'<b>표시 확인</b>');});
 
 test('회신 강조는 추가 정보·미응답을 수용 가능 또는 불가로 오인하지 않음',()=>{assert.equal(U.responsePresentation('accepted').tone,'green');assert.equal(U.responsePresentation('rejected').tone,'red');for(const state of ['more','timeout']){assert.equal(U.responsePresentation(state).tone,'amber');assert.notEqual(U.responsePresentation(state).label,'수용 가능');}assert.equal(U.responsePresentation('pending').tone,'pending');});
+
+test('방문 안내가 필요한 새 회송은 체크 완료 여부와 관계없이 일정을 먼저 안내',()=>{
+ let s=sent();s=M.transition(s,{type:'demoResponses'},'simulation');s=M.transition(s,{type:'publish'});s=M.transition(s,{type:'choose',id:'saebom',consent:true},'patient');s.requiresSchedule=true;
+ for(const key of Object.keys(s.prep))s.prep[key]=true;
+ assert.equal(U.nextTask(s,'hospital').action,'focus-plan');
+ s.transferPlan={confirmed:true};s.prep.transport=false;s.prep.guidance=false;
+ const task=U.nextTask(s,'hospital');assert.equal(task.action,'focus-prep');assert.match(task.title,/2개/);assert.match(task.description,/이동·입원/);
+ s.prep.transport=true;s.prep.guidance=true;assert.equal(U.nextTask(s,'hospital').action,'handoff');
+});
+test('요청 링크 복사와 실제 상대 응답을 구분하고 이전 문의 복사 기록을 재사용하지 않음',()=>{
+ let s=ready();let h=U.handoffStatus(s,'patient');assert.equal(h.copied,false);assert.equal(h.response,false);
+ s=M.transition(s,{type:'handoffRequest',target:'patient'});h=U.handoffStatus(s,'patient');assert.equal(h.copied,true);assert.equal(h.response,false);
+ s=M.transition(s,{type:'consent',value:true},'patient');assert.equal(U.handoffStatus(s,'patient').response,true);
+ s=M.transition(s,{type:'send'});s=M.transition(s,{type:'handoffRequest',target:'facility'});assert.equal(U.handoffStatus(s,'facility').response,false);
+ s=M.transition(s,{type:'demoResponses'},'simulation');assert.equal(U.handoffStatus(s,'facility').response,true);
+ s=M.transition(s,{type:'expand'});assert.equal(U.handoffStatus(s,'patient').copied,false);assert.equal(U.handoffStatus(s,'patient').response,false);
+});
+test('간략 진행 표시는 미완료 진료 확인을 완료로 표시하지 않음',()=>{
+ assert.deepEqual(U.journey(0).map(x=>x.status),['current','upcoming','upcoming','upcoming']);
+ assert.deepEqual(U.journey(6).map(x=>x.status),['done','done','done','current']);
+ assert.ok(U.journey(7).every(x=>x.status==='done'));
+});

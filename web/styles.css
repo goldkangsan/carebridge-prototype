@@ -120,3 +120,33 @@ body[data-workspace]:not([data-workspace="home"]) .field #referral-source:focus{
 .task-list-row{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px 0;border-bottom:1px solid var(--line)}.task-list-row p{margin:4px 0;font-size:14px}.task-list-row span{font-size:12px}.visit-plan{padding:18px 0;margin:10px 0 20px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.visit-guide{padding:16px 18px;margin:12px 0 20px;background:var(--navy-soft);border:1px solid var(--line);border-radius:7px}.visit-guide h3{color:var(--navy)}.visit-guide .data-row{border-color:var(--line)}.custom-preferences{margin:16px 0 22px;border-top:1px solid var(--line);padding-top:8px}.custom-preferences[open] form{margin-top:12px}.patient-history-row{align-items:center;flex-wrap:wrap}.patient-history-row button{margin-left:auto}.visit-plan .patient-registration-grid{gap:10px 16px}.visit-plan .field{margin-bottom:4px}
 @media(max-width:700px){.task-list-row{align-items:flex-start;flex-direction:column;gap:12px}.task-list-row>.row{width:100%;justify-content:space-between}.visit-guide{padding:14px}.visit-guide .data-row{grid-template-columns:80px 1fr}.mobile-nav .route-link{min-width:62px}.patient-history-row{font-size:12px}}
 @media(max-width:700px){header{height:auto;min-height:64px;padding:10px 14px;align-content:flex-start;row-gap:8px}.case-tools{width:100%;margin:0;justify-content:flex-end}.case-tools button{min-height:36px;padding:6px 10px}.current-workspace{margin-left:auto}.mobile-nav{position:relative;z-index:2}}
+
+/* One clear next action, with persistent journey and honest handoff feedback. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.journey-strip{list-style:none;display:flex;padding:0;margin:0 0 18px;gap:0;border-bottom:1px solid var(--line)}
+.journey-strip li{flex:1;display:flex;align-items:center;gap:8px;padding:11px 8px;color:var(--muted);font-size:13px;border-bottom:3px solid transparent}
+.journey-strip li>span:first-child{display:inline-flex;align-items:center;justify-content:center;width:23px;height:23px;border:1px solid var(--line);border-radius:50%;font-size:11px;flex-shrink:0}
+.journey-strip .current{color:var(--workspace-accent,var(--navy));font-weight:750;border-color:var(--workspace-accent,var(--navy))}
+.journey-strip .current>span:first-child{background:var(--workspace-accent,var(--navy));border-color:transparent;color:white}
+.journey-strip .done>span:first-child{background:#e8f3ee;border-color:transparent;color:#176448}
+.focused-task .task-action{flex-shrink:0}.focused-task .task-action :is(button,a){display:inline-flex;align-items:center;justify-content:center;min-height:44px;white-space:normal;text-align:center}
+.task-secondary{background:white!important;border:1px solid var(--line)!important;color:var(--navy)!important;box-shadow:none!important}
+.handoff-progress{background:white;border:1px solid var(--line);border-radius:7px;padding:14px 18px;margin:0 0 18px}
+.handoff-progress h3{font-size:13px;margin:0 0 11px}.handoff-progress ol{list-style:none;display:flex;gap:18px;padding:0;margin:0}
+.handoff-progress li{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.handoff-progress li>span{border:1px solid var(--line);border-radius:50%;width:21px;height:21px;display:inline-flex;align-items:center;justify-content:center;font-size:11px}
+.handoff-progress .done{color:#176448}.handoff-progress .done>span{background:#e8f3ee;border-color:transparent}.handoff-progress small{color:var(--muted)}
+.handoff-progress .tiny{margin:10px 0 0}.dialog-body .handoff-progress{background:#f8fafc}
+.patient-detail-actions{align-items:flex-start}.patient-new-options{font-size:13px;margin:8px 0}.patient-new-options summary{cursor:pointer;color:var(--muted);padding:5px 0}.patient-new-options[open]{padding-bottom:8px}.patient-new-options .tiny{max-width:250px}
+.fact-caption{display:block;font-size:11px;color:var(--muted);font-weight:500;margin:0 0 6px}.response-context{padding:10px 0 0}.choice-treatment{margin-top:5px}
+@media(max-width:760px){
+ .journey-strip{margin-bottom:14px}.journey-strip li{display:flex;flex-direction:column;gap:5px;padding:8px 2px;font-size:11px;text-align:center;white-space:nowrap}
+ .focused-task .task-action :is(button,a){width:100%;box-sizing:border-box}.handoff-progress{padding:13px 14px}.handoff-progress ol{display:grid;gap:9px}.handoff-progress li{font-size:12px}.handoff-progress .tiny{font-size:11px}
+ .decision-board,.decision-board:has(>.choice-column:nth-child(3)){grid-template-columns:minmax(0,1fr);gap:16px}
+ .choice-column .facility-main{padding:17px}.choice-column h3{font-size:19px}.choice-column .type{font-size:12px}.choice-column .facility-photo,.choice-column .facility-photo.compact{aspect-ratio:2.8;max-height:160px}
+ .choice-facts{grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.choice-facts dt{font-size:12px}.choice-facts dd{font-size:24px}
+ .choice-column .facility-bottom{padding:13px 17px}.choice-column .facility-bottom>.row{grid-template-columns:auto minmax(0,1fr)}.choice-column .facility-bottom button{min-height:44px;font-size:14px;padding:10px 12px}
+ .choice-evidence{font-size:12px}.choice-column>.facility-main>.status-badge,.response-context .status-badge{font-size:12px}.decision-tools{gap:10px}.decision-tools button{min-height:42px;font-size:12px}
+}
+.mobile-compare-entry,.comparison-hint{display:none}
+@media(max-width:760px){.mobile-compare-entry{display:block;margin:0 0 16px}.mobile-compare-entry button{min-height:44px;width:100%;font-size:14px}.comparison-hint{display:block;margin:0 0 12px}.staff-row .response-context{padding-top:0}.staff-row .fact-caption{font-size:10px}}
