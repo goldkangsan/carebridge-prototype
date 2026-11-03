@@ -8,11 +8,12 @@ export function createApi(M, upstreamFetch = fetch) {
     const url = new URL(request.url), path=url.pathname;
     if(path==='/api/health' && request.method==='GET') return json({version:2,release:7,storage:process.env.DATABASE_URL?'postgresql':'browser-only',mode:process.env.DATABASE_URL?'shared-prototype-api':'stateless-demo-api',medicalIntegration:false,agentWorkflow:'Gemini grounded planner + facility sandbox API',routeProvider:'OSRM',hospitalDirectory:'OpenStreetMap / Nominatim',aiAnalysisAvailable:process.env.AI_ANALYSIS_ENABLED==='true'||process.env.AI_ANALYSIS_ENABLED!=='false'&&!!(process.env.OPENAI_API_KEY||process.env.GEMINI_API_KEY),synthetic:true});
     if(path==='/api/route' && request.method==='GET') {
-      const id=url.searchParams.get('facility');
+      const id=url.searchParams.get('facility'),area=url.searchParams.get('origin'),preset=area?M.locations?.[area]:null,cacheKey=id+':'+(area||'default');
+      if(area&&!preset)return json({error:'기준 지역을 확인해 주세요.'},400);
       if(!points[id]) return json({error:'유효한 시연 기관을 선택해 주세요.'},400);
-      if(routeCache.has(id)) return json({...routeCache.get(id),cached:true});
+      if(routeCache.has(cacheKey)) return json({...routeCache.get(cacheKey),cached:true});
       try {
-        const coords=origin.join(',')+';'+points[id].join(',');
+        const coords=(preset?[preset.lon,preset.lat]:origin).join(',')+';'+points[id].join(',');
         let r;
         const servers=['https://routing.openstreetmap.de/routed-car/route/v1/driving/','https://router.project-osrm.org/route/v1/driving/'];
         for(const server of servers){
@@ -26,7 +27,7 @@ export function createApi(M, upstreamFetch = fetch) {
         }
         if(!r)throw Error('RouteUnavailable');
         const result={provider:'OSRM / OpenStreetMap',mode:'live',syntheticEndpoints:true,traffic:false,km:Math.round(r.distance/100)/10,minutes:Math.max(1,Math.round(r.duration/60)),coordinates:r.geometry.coordinates,at:new Date().toISOString()};
-        routeCache.set(id,result); return json(result);
+        routeCache.set(cacheKey,result); return json(result);
       } catch { return json({error:'공개 경로 API에 연결하지 못했습니다. 카드의 시연용 거리와 구분해 주세요.',mode:'unavailable'},503); }
     }
     if(path==='/api/transition' && request.method==='POST') {

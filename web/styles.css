@@ -115,3 +115,7 @@ body[data-workspace]:not([data-workspace="home"]) .field #referral-source:focus{
 
 /* The brand stays consistent across all role workspaces. */
 .brand{--navy:#171e64;--accent-hover:#3a448f;--accent-focus:#7087d3}
+
+/* Work queues and explicit visit guidance. */
+.task-list-row{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px 0;border-bottom:1px solid var(--line)}.task-list-row p{margin:4px 0;font-size:14px}.task-list-row span{font-size:12px}.visit-plan{padding:18px 0;margin:10px 0 20px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.visit-guide{padding:16px 18px;margin:12px 0 20px;background:var(--navy-soft);border:1px solid var(--line);border-radius:7px}.visit-guide h3{color:var(--navy)}.visit-guide .data-row{border-color:var(--line)}.custom-preferences{margin:16px 0 22px;border-top:1px solid var(--line);padding-top:8px}.custom-preferences[open] form{margin-top:12px}.patient-history-row{align-items:center;flex-wrap:wrap}.patient-history-row button{margin-left:auto}.visit-plan .patient-registration-grid{gap:10px 16px}.visit-plan .field{margin-bottom:4px}
+@media(max-width:700px){.task-list-row{align-items:flex-start;flex-direction:column;gap:12px}.task-list-row>.row{width:100%;justify-content:space-between}.visit-guide{padding:14px}.visit-guide .data-row{grid-template-columns:80px 1fr}.mobile-nav .route-link{min-width:62px}.patient-history-row{font-size:12px}}

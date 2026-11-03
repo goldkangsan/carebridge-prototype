@@ -36,6 +36,7 @@ export function createPatientsApi({store,configured=()=>databaseConfigured()}={}
    const registerId=url.searchParams.get('register'),access=request.headers.get('authorization')?.replace(/^Bearer /,'');
    if(!uuid(registerId)||!token(access))return json({error:'환자 목록의 이용 권한이 필요합니다.'},401);
    if(!await db.registerAccess(registerId,hash(access)))return json({error:'환자 목록의 이용 링크를 확인해 주세요.'},403);
+   if(body.operation==='tasks')return json({cases:await db.registerTasks(registerId),syntheticOnly:true});
    if(body.operation==='search'){
     if(typeof body.query!=='string'||body.query.length>80)return json({error:'검색어를 80자 이내로 입력해 주세요.'},400);
     return json({patients:body.query.trim()?await db.searchPatients(registerId,body.query.trim()):[],limit:30,syntheticOnly:true});

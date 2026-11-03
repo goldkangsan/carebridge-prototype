@@ -1,6 +1,6 @@
 (function(root){
   'use strict';
-  const roles=['hospital','patient','facility'],views=['case','history','flow','guide','hospitals','patients'];
+  const roles=['hospital','patient','facility'],views=['case','history','flow','guide','hospitals','patients','tasks'];
   const facilities=['saebom','solbit','daon','bom','haeon'];
   function path({role,view='case',facility='saebom'}={}){
     if(!roles.includes(role))return '/';

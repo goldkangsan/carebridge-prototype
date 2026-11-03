@@ -32,10 +32,10 @@ test('문의 없는 기관에는 응답 제출 대신 문의 대상 이동 안�
 });
 test('환자 비교와 기관 선택은 환자 역할에서 수행',()=>{
  let s=sent();s=M.transition(s,{type:'demoResponses'},'simulation');s=M.transition(s,{type:'publish'});
- assert.equal(U.nextTask(s,'hospital').action,'go-patient');assert.equal(U.nextTask(s,'patient',{compareCount:1}).action,'focus-candidates');assert.equal(U.nextTask(s,'patient',{compareCount:2}).action,'open-compare');
+ assert.equal(U.nextTask(s,'hospital').action,'request-handoff');assert.equal(U.nextTask(s,'patient',{compareCount:1}).action,'focus-candidates');assert.equal(U.nextTask(s,'patient',{compareCount:2}).action,'open-compare');
  s=M.transition(s,{type:'choose',id:'saebom',consent:true},'patient');assert.equal(U.nextTask(s,'hospital').action,'focus-prep');for(const key of Object.keys(s.prep))s=M.transition(s,{type:'prep',key,value:true});assert.equal(U.nextTask(s,'hospital').action,'handoff');
  s=M.transition(s,{type:'handoff'});assert.equal(U.nextTask(s,'facility',{facility:'solbit'}).action,'go-facility');assert.equal(U.nextTask(s,'facility',{facility:'saebom'}).action,'visit');
- s=M.transition(s,{type:'visit',id:'saebom',result:'missed',note:'일정 재확인 (가상)'},'facility');assert.equal(U.nextTask(s,'hospital').action,'relink');assert.equal(U.nextTask(s,'patient').action,'go-hospital');
+ s=M.transition(s,{type:'visit',id:'saebom',result:'missed',note:'일정 재확인 (가상)'},'facility');assert.equal(U.nextTask(s,'hospital').action,'relink');assert.equal(U.nextTask(s,'patient').action,null);
 });
 
 test('원문 강조는 알려진 항목만 구분하고 모든 원문 줄을 보존',()=>{const text='가상 문서\n필요 처치: 정맥 항생제 지속\n약제: 가상약: A\n임의 메모: 원문 그대로\n';const lines=U.sourceSegments(text);assert.equal(lines.map(x=>x.text).join('\n'),text);assert.equal(lines[1].kind,'treatment');assert.equal(lines[2].value,'가상약: A');assert.equal(lines[3].kind,'text');});

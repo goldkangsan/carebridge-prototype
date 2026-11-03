@@ -1,5 +1,6 @@
 // PostgreSQL schema. Runtime bootstrap is idempotent; no destructive reset/drop.
 export const schema=[
+`CREATE TABLE IF NOT EXISTS cb_facility_profiles (scope_id uuid NOT NULL,facility text NOT NULL,body jsonb NOT NULL,updated_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(scope_id,facility))`,
 `CREATE TABLE IF NOT EXISTS cb_patient_registers (
  id uuid PRIMARY KEY, access_hash text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 )`,

@@ -13,7 +13,7 @@
   }
   function nextTask(s,role,o={}){
     const make=(title,description,action,label,owner=role,tone='navy',id)=>({title,description,action,label,owner:owners[owner],tone,id});
-    const switchTo=(owner,title,description)=>make(title,description,'go-'+owner,owners[owner]+' 화면으로 이동',owner);
+    const switchTo=(owner,title,description)=>role==='hospital'&&owner!=='hospital'?make(title,owner==='patient'?'요청 링크를 환자·보호자에게 전달하고 응답을 기다립니다.':'해당 기관에 요청 링크를 전달하고 회신을 기다립니다.','request-handoff',owner==='patient'?'환자 요청 링크 준비':'기관 요청 링크 준비',owner,'navy',owner):make(title,description.replace(/[^.]*화면으로 이동[^.]*\./g,'진행 상태는 자동으로 갱신됩니다.'),null,null,owner,'pending');
     if(o.agentError&&(s.stage===1||s.stage===2))return make('AI 업무 판단을 완료하지 못했습니다.','입력과 진행 상태는 유지했습니다. 다시 시도하거나 아래 문의 진행 화면에서 기본 점검을 선택할 수 있습니다.','retry-agent','AI 다시 시도',role,'amber');
     if(s.stage===0){
       if(role!=='hospital')return switchTo('hospital','의뢰기관의 회송 정보 확인이 필요합니다.','의뢰기관 화면으로 이동해 회송서 확인을 진행합니다.');

@@ -13,7 +13,7 @@
   pending=(async()=>{const data=await call({operation:'create-register'});register=data.register;localStorage.setItem(KEY,JSON.stringify(register));return register;})();
   try{return await pending;}finally{pending=null;}
  }
- root.CareBridgePatients={ensure,search:async query=>{await ensure();return call({operation:'search',query});},detail:async patientId=>{await ensure();return call({operation:'detail',patientId});},
+ root.CareBridgePatients={ensure,tasks:async()=>{await ensure();return call({operation:'tasks'});},search:async query=>{await ensure();return call({operation:'search',query});},detail:async patientId=>{await ensure();return call({operation:'detail',patientId});},
   create:async patient=>{await ensure();return call({operation:'register',patient});},selection:patientId=>({registerId:register.id,access:register.access,patientId}),
   href:()=>'/hospital/patients#'+new URLSearchParams({register:register.id,registerAccess:register.access}).toString()};
 })(typeof globalThis!=='undefined'?globalThis:this);
