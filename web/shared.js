@@ -13,6 +13,7 @@
   const a=access(path);if(!session||!a)throw Error('이 화면의 이용 링크가 필요합니다.');
   const r=await fetch('/api/cases?id='+encodeURIComponent(session.id),{method:body?'POST':'GET',headers:{Authorization:'Bearer '+a,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify({...body,revision:session.revision,requestId:crypto.randomUUID()})}:{}),signal:AbortSignal.timeout(body?.operation==='advance'?29000:12000)});
   const data=await r.json();if(!r.ok)throw Error(data.error||'공유 기록을 불러오지 못했습니다.');
+  if(data.credentials)Object.assign(session.credentials,data.credentials);
   session.revision=data.revision;session.access=a;session.role=data.role;session.facility=data.facility;session.caseId=data.state.caseId;session.stage=data.state.stage;remember();return data;
  }
  async function init(){
@@ -20,6 +21,7 @@
   const q=parseLink(location.hash),saved=read(ACTIVE,null);
   if(q){const owner=read(BOOK,[]).find(x=>x.id===q.id)||saved?.id===q.id&&saved;session={id:q.id,access:q.access,revision:0,credentials:owner?.credentials||{}};
    const r=await fetch('/api/cases?id='+encodeURIComponent(q.id),{headers:{Authorization:'Bearer '+q.access},signal:AbortSignal.timeout(12000)}),data=await r.json();if(!r.ok){session=null;throw Error(data.error||'이용 링크를 확인해 주세요.');}
+   if(data.credentials)Object.assign(session.credentials,data.credentials);
    const key=data.role==='facility'?'facility/'+data.facility:data.role;session.credentials[key]=q.access;session.role=data.role;session.facility=data.facility;session.revision=data.revision;session.caseId=data.state.caseId;session.stage=data.state.stage;remember();
    const expected=keyFor(location.pathname);if(expected&&expected!==key&&!session.credentials[expected])throw Error('이 링크로는 요청한 화면을 이용할 수 없습니다.');
    if(expected&&expected!==key)return request();return data;
@@ -30,7 +32,7 @@
   const r=await fetch('/api/cases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'create',scenario}),signal:AbortSignal.timeout(15000)}),data=await r.json();if(!r.ok)throw Error(data.error||'새 회송 건을 만들지 못했습니다.');
   session={id:data.id,revision:data.revision,credentials:data.credentials,access:data.credentials.hospital,role:'hospital',facility:null,caseId:data.state.caseId,stage:0};remember();return data;
  }
- root.CareBridgeShared={parseLink,fragment,keyFor,init,create,refresh:()=>request(),transition:action=>request({operation:'transition',action}),advance:()=>request({operation:'advance'}),href:pathHref,
+ root.CareBridgeShared={parseLink,fragment,keyFor,init,create,refresh:()=>request(),transition:action=>request({operation:'transition',action}),advance:basic=>request({operation:'advance',basic:basic===true}),href:pathHref,
   get active(){return !!session;},get revision(){return session?.revision;},get session(){return session;},get available(){return available;},set available(v){available=v;},
   book:()=>read(BOOK,[]),can:path=>!session||!!access(path),forget(){session=null;localStorage.removeItem(ACTIVE);},historyHref(item){return '/hospital'+fragment(item.id,item.credentials.hospital);}};
 })(typeof globalThis!=='undefined'?globalThis:this);

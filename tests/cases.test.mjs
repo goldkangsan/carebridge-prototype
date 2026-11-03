@@ -22,6 +22,7 @@ async function ready(c){await act(c,'hospital',{type:'attest',value:true});await
 
 test('SQL에 독립 회송 건과 해시된 역할별 접근 권한 저장; 서버 재생성 후에도 유지',async()=>{
  const a=await create(),b=await create();assert.notEqual(a.id,b.id);assert.notEqual(a.state.caseId,b.state.caseId);
+ assert.deepEqual((await read(a)).credentials,a.credentials);
  const rows=(await pg.query('SELECT token_hash,role FROM cb_access WHERE case_id=$1',[a.id])).rows;
  assert.equal(rows.length,7);assert.ok(rows.every(x=>x.token_hash.length===64&&!Object.values(a.credentials).includes(x.token_hash)));
  await act(a,'hospital',{type:'attest',value:true});const secondApi=createCasesApi(M,{store:createStore({query:async(q,p)=>(await pg.query(q,p)).rows,batch:async()=>{}}),configured:()=>true});
@@ -61,4 +62,9 @@ test('다른 Origin·잘못된 ID·구성 없는 저장소 요청 차단',async(
  const bad=await api(new Request("https://demo.test/api/cases?id=';DROP%20TABLE%20cb_cases;--",{headers:{Authorization:'Bearer '+'A'.repeat(43)}}));assert.equal(bad.status,401);
  const unavailable=createCasesApi(M,{configured:()=>false});assert.equal((await unavailable(new Request('https://demo.test/api/cases?status=1')).then(r=>r.json())).available,false);
  assert.equal((await unavailable(new Request('https://demo.test/api/cases'))).status,503);
+});
+test('명시적으로 선택한 기본 모드는 LLM 결과로 가장하지 않고 공유 상태를 진행',async()=>{
+ const c=await create();await ready(c);await act(c,'patient',{type:'consent',value:true});
+ await post(c,'patient',{operation:'advance',basic:true});const r=await post(c,'patient',{operation:'advance',basic:true});
+ assert.equal(r.state.stage,3);assert.equal(r.state.automationMode,'basic');assert.equal(r.state.lastAgent,null);assert.equal(r.state.agentRuns.length,0);
 });

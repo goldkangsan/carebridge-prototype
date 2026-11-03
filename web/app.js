@@ -98,7 +98,7 @@
     if(working||autoRunning||sharedLoading||sharedError||role==='facility')return false;
     autoRunning=true;const epoch=generation,oldRevision=S.revision;agentError='';setBusy(true,'기관 문의와 회신을 확인하고 있습니다…');
     try{
-      const result=await S.advance();if(epoch!==generation)return false;
+      const result=await S.advance(basicMode||state.automationMode==='basic');if(epoch!==generation)return false;
       state=result.state;save();setBusy(false);render();
       if(result.conflict)toast('다른 화면의 변경 내용을 반영했습니다.');
       if(S.revision!==oldRevision&&autoEnabled&&sharedCanAdvance())queueMicrotask(()=>{autoRunning=false;kickAutomation();});
@@ -106,7 +106,7 @@
     }catch(e){agentError=e.message;toast('자동 처리를 완료하지 못했습니다. 다시 시도할 수 있습니다.',true);return false;}
     finally{autoRunning=false;setBusy(false);render();}
   }
-  function sharedCanAdvance(){return state.consent&&(state.stage===1&&M.candidates(state).some(f=>f.eligible)||state.stage===2&&(state.inquiries.some(f=>!state.responses[f])||!state.lastAgent||state.lastAgent.nextAction!==M.agentAction(state)));}
+  function sharedCanAdvance(){const pending=state.inquiries.some(f=>!state.responses[f]);return state.consent&&(state.stage===1&&M.candidates(state).some(f=>f.eligible)||state.stage===2&&(state.automationMode==='basic'?pending||M.accepted(state).length>0:pending||!state.lastAgent||state.lastAgent.nextAction!==M.agentAction(state)));}
   async function initializeSharing(){
     sharedLoading=true;sharedError='';render();
     try{
