@@ -120,7 +120,7 @@
       if(loaded.status==='rejected')throw loaded.reason;const data=loaded.value;
       if(data){state=data.state;sourceDirty=false;save();writeRoute(routeLocation(),true);}
     }catch(e){sharedError=e.message;}
-    finally{sharedLoading=false;render();await checkApi();if(view==='tasks')loadTasks();}
+    finally{await checkApi();sharedLoading=false;render();if(view==='tasks')loadTasks();kickAutomation();}
   }
   async function refreshShared(){
     if(!S.active||working||autoRunning||sharedLoading||sourceDirty||$('#dialog').open||document.hidden)return;
