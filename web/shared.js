@@ -10,9 +10,10 @@
  function access(path){const key=keyFor(path);return key?session?.credentials[key]:session?.access;}
  function pathHref(path){if(!session)return path;const a=access(path);return a?path+fragment(session.id,a):null;}
  async function request(body,path=location.pathname){
-  const a=access(path);if(!session||!a)throw Error('이 화면의 이용 링크가 필요합니다.');
+  const current=session,a=access(path);if(!session||!a)throw Error('이 화면의 이용 링크가 필요합니다.');
   const r=await fetch('/api/cases?id='+encodeURIComponent(session.id),{method:body?'POST':'GET',headers:{Authorization:'Bearer '+a,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify({...body,revision:session.revision,requestId:crypto.randomUUID()})}:{}),signal:AbortSignal.timeout(body?.operation==='advance'?29000:12000)});
   const data=await r.json();if(!r.ok)throw Error(data.error||'공유 기록을 불러오지 못했습니다.');
+  if(session!==current)return {...data,stale:true};
   if(data.credentials)Object.assign(session.credentials,data.credentials);
   session.revision=data.revision;session.profileRevision=data.profileRevision||'';session.access=a;session.role=data.role;session.facility=data.facility;session.caseId=data.state.caseId;session.stage=data.state.stage;remember();return data;
  }
@@ -37,7 +38,7 @@
   session={id:data.id,revision:data.revision,profileRevision:data.profileRevision||'',credentials:data.credentials,access:data.credentials.hospital,role:'hospital',caseId:data.state.caseId,stage:data.state.stage};remember();return data;
  }
  async function tasks(role,facility){const key=role==='facility'?'facility/'+facility:role;const items=read(BOOK,[]).filter(x=>x.credentials?.[key]);return Promise.all(items.map(async x=>{try{const r=await fetch('/api/cases?id='+encodeURIComponent(x.id),{headers:{Authorization:'Bearer '+x.credentials[key]},signal:AbortSignal.timeout(12000)});if(!r.ok)return null;const d=await r.json(),s=d.state;if(role==='facility'&&!s.inquiries.includes(facility)&&s.selected!==facility)return null;return {id:x.id,case_number:s.caseId,name:s.patient,number:s.patientRecord?.number||'',stage:s.stage,selected:s.selected,consent:s.consent,response:s.responses?.[facility]?.status,visit_result:s.visit?.result,href:('/'+key)+fragment(x.id,x.credentials[key])};}catch{return null;}})).then(rows=>rows.filter(Boolean));}
- root.CareBridgeShared={parseLink,fragment,keyFor,init,create,reopen,tasks,refresh:()=>request(),assignPatient:patientSelection=>request({operation:'assign-patient',patientSelection},'/hospital'),transition:action=>request({operation:'transition',action}),advance:basic=>request({operation:'advance',basic:basic===true}),href:pathHref,
+ root.CareBridgeShared={parseLink,fragment,keyFor,init,create,reopen,tasks,refresh:()=>request(),assignPatient:patientSelection=>request({operation:'assign-patient',patientSelection},'/hospital'),transition:action=>request({operation:'transition',action}),simulate:action=>request({operation:'simulate',action}),advance:basic=>request({operation:'advance',basic:basic===true}),href:pathHref,
   get active(){return !!session;},get revision(){return session?.revision;},get session(){return session;},get available(){return available;},set available(v){available=v;},
   book:()=>read(BOOK,[]),can:path=>!session||!!access(path),forget(){session=null;localStorage.removeItem(ACTIVE);},historyHref(item){return '/hospital'+fragment(item.id,item.credentials.hospital);}};
 })(typeof globalThis!=='undefined'?globalThis:this);

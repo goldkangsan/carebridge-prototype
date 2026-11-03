@@ -6,7 +6,7 @@ import {patientFromRegister,patientSnapshot} from './patients.mjs';
 export const hashToken=t=>createHash('sha256').update(t).digest('hex');
 const uuid=s=>typeof s==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s);
 const token=s=>typeof s==='string'&&/^[A-Za-z0-9_-]{43}$/.test(s);
-const allow={hospital:['attest','source','parse','applyExtraction','supplement','ready','provideInfo','expand','prep','handoff','ack','relink','transferPlan','handoffRequest'],patient:['customPreferences','profile','preferences','consent','choose','rejectCandidates'],facility:['facilityUpdate','response','visit']};
+const allow={hospital:['attest','source','parse','applyExtraction','supplement','ready','provideInfo','expand','prep','handoff','ack','relink','transferPlan','handoffRequest','send','publish'],patient:['customPreferences','profile','preferences','consent','choose','rejectCandidates'],facility:['facilityUpdate','response','visit']};
 function credentialsFor(M,owner){return Object.fromEntries(['hospital','patient',...M.facilities.map(f=>'facility/'+f.id)].map(key=>[key,key==='hospital'?owner:createHmac('sha256',owner).update(key).digest('base64url')]));}
 export function projectState(M,state,grant){
  const s=structuredClone(state);
@@ -65,6 +65,11 @@ export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agen
     const next=structuredClone(row.state);if(next.patientRecord?.id!==p.id){next.source=M.initial(next.scenario).source;next.data={};next.extraction=null;next.parsed=false;next.doctorApproved=false;}next.patientRecord=patientSnapshot(p);next.patient=p.name;next.age=p.age;
     next.events.unshift({type:'patient',actor:'hospital',detail:'등록 환자 정보를 확인하여 회송 대상자로 불러옴',time:new Date().toISOString()});next.metrics.actions++;
     const saved=await db.commit(row,next,body.requestId);return saved?response(saved,row):response(await db.read(id,hashToken(key)),row,{conflict:true});
+   }
+   if(body.operation==='simulate'){
+    if(row.role!=='hospital'||!['demoResponses','timeout'].includes(body.action?.type))return json({error:'발표자용 모의 처리는 의뢰기관에서만 실행할 수 있습니다.'},403);
+    const next=M.transition(row.state,body.action,'simulation'),saved=await db.commit(row,next,body.requestId);
+    return saved?response(saved,row):response(await db.read(id,hashToken(key)),row,{conflict:true});
    }
    if(body.operation==='advance'){
     if(row.role==='facility')return json({error:'수용기관은 직접 회신해 주세요.'},403);
