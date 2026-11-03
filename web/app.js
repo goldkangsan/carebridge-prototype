@@ -1,7 +1,7 @@
 (function(){
   'use strict';
   const M=window.CareBridge,U=window.CareBridgeUX,R=window.CareBridgeRoutes,S=window.CareBridgeShared,P=window.CareBridgePatients,KEY='carebridge-prototype-v2';
-  let patientRows=null,patientQuery='',patientDetail=null,patientsLoading=false,patientsError='';
+  let patientRows=null,patientQuery='',patientDetail=null,patientsLoading=false,patientsError='',patientSearchId=0;
   let sharedLoading=true,sharedError='',sourceDirty=false;
   let agentError='',basicMode=false,sourceEditMode=false;
   const roles={hospital:'의뢰기관',patient:'환자·보호자',facility:'수용기관',simulation:'자동 처리'};
@@ -38,7 +38,7 @@
   async function navigateRoute(path,{replace=false,pop=false}={}){
     if(pop&&S.parseLink(location.hash)?.id!==S.session?.id){sharedLoading=true;render();try{const loaded=await S.init();if(loaded)state=loaded.state;}catch(e){sharedError=e.message;}finally{sharedLoading=false;}}
     if(S.active&&!S.can(path)){toast('해당 역할의 이용 링크가 필요합니다.',true);return;}
-    const dest=R.parse(path);if(S.active)generation++;close();
+    const dest=R.parse(path);if(view==='patients'||dest.view==='patients')resetPatientSearch();if(S.active)generation++;close();
     if(dest.role==='facility'&&state.stage===2&&autoEnabled){autoEnabled=false;generation++;autoRunId++;autoRunning=false;liveMessage='수용기관 직접 응답 모드';save();}
     role=dest.role||'hospital';view=dest.view;
     if(dest.role==='facility')facility=dest.facility||state.selected||state.inquiries[0]||'saebom';
@@ -47,7 +47,6 @@
     if(S.active){sharedLoading=true;render();try{const data=await S.refresh();state=data.state;sharedError='';sourceDirty=false;}catch(e){sharedError=e.message;}finally{sharedLoading=false;}}
     render();window.scrollTo(0,0);$('#main')?.focus({preventScroll:true});
     if(view==='hospitals'&&!hospitalResults)loadHospitals();
-    if(view==='patients'&&!patientsLoading)loadPatients();
     if(view==='case')queueMicrotask(kickAutomation);
   }
   function portalMarkup(){
@@ -118,7 +117,7 @@
       if(loaded.status==='rejected')throw loaded.reason;const data=loaded.value;
       if(data){state=data.state;sourceDirty=false;save();writeRoute(routeLocation(),true);}
     }catch(e){sharedError=e.message;}
-    finally{sharedLoading=false;render();await checkApi();if(view==='patients'&&patientRows===null)loadPatients();}
+    finally{sharedLoading=false;render();await checkApi();}
   }
   async function refreshShared(){
     if(!S.active||working||autoRunning||sharedLoading||sourceDirty||$('#dialog').open||document.hidden)return;
@@ -153,17 +152,21 @@
     const selected=patientDetail?.patient;
     const canAttach=S.active&&state.stage===0&&!state.parsed&&!state.doctorApproved;
     return pageHead('환자 검색·등록','등록된 환자를 찾아 정보를 확인한 뒤 회송 대상자로 불러옵니다.')+
-      `<section class="panel patient-search-panel"><div class="patient-search-head"><h2>환자 찾기</h2><div class="row">${button('환자 신규 등록','patient-register','primary')}${button('환자 목록 이용 링크','patient-directory-link','small')}</div></div><form id="patient-search-form" class="patient-search-form"><label class="field"><span>이름 또는 환자번호</span><input id="patient-query" type="search" maxlength="80" placeholder="예: 김하늘 또는 CB-P1001" value="${esc(patientQuery)}" autocomplete="off"></label><button type="submit" class="primary">검색</button>${patientQuery?button('전체 목록','patient-list-all','small'):''}</form><p class="tiny">환자번호는 병원 등록번호입니다. 실제 환자 정보를 입력하지 마세요.</p></section>`+
+      `<section class="panel patient-search-panel"><div class="patient-search-head"><h2>환자 찾기</h2><div class="row">${button('환자 신규 등록','patient-register','primary')}${button('환자 목록 이용 링크','patient-directory-link','small')}</div></div><form id="patient-search-form" class="patient-search-form"><label class="field"><span>이름 또는 환자번호</span><input id="patient-query" type="search" maxlength="80" placeholder="예: 김하늘 또는 CB-P1001" value="${esc(patientQuery)}" autocomplete="off"></label><button type="submit" class="primary">검색</button>${patientQuery?button('검색 초기화','patient-search-clear','small'):''}</form><p class="tiny">환자번호는 병원 등록번호입니다. 실제 환자 정보를 입력하지 마세요.</p></section>`+
       (patientsError?`<div class="notice amber" role="alert">${esc(patientsError)} ${button('다시 불러오기','patient-search','small')}</div>`:'')+
-      `<div class="patient-directory-layout"><section class="panel patient-results"><div class="panel-head"><h2>검색 결과 ${patientRows?.length??0}명</h2><span class="tiny">최대 30명</span></div>${patientsLoading?'<p role="status" class="pending">환자 목록을 불러오고 있습니다…</p>':patientRows?.length?`<div class="patient-table-scroll"><table class="patient-table"><thead><tr><th>이름</th><th>환자번호</th><th>연령대</th><th>회송 이력</th><th>확인</th></tr></thead><tbody>${patientRows.map(p=>`<tr class="${selected?.id===p.id?'selected-patient':''}"><td><strong>${esc(p.name)}</strong></td><td>${esc(p.number)}</td><td>${esc(p.age)}</td><td>${p.case_count||0}건</td><td>${button('정보 보기','patient-detail','small',`data-id="${p.id}" aria-label="${esc(p.name)} ${esc(p.number)} 정보 보기"`)}</td></tr>`).join('')}</tbody></table></div>`:`<div class="empty-patient"><h3>${patientQuery?'검색 결과가 없습니다.':'등록된 환자가 없습니다.'}</h3><p>이름·환자번호를 확인하거나 새로운 환자를 등록해 주세요.</p>${button('환자 신규 등록','patient-register','small')}</div>`}</section>
-      <section class="panel patient-details" aria-label="선택한 환자 정보">${selected?`<p class="eyebrow">선택한 환자</p><h2>${esc(selected.name)}</h2>${dl([['환자번호',esc(selected.number)],['연령대',esc(selected.age)],['연락처',esc(selected.contact||'미등록')]])}<p class="notice">이름과 환자번호가 회송 대상자와 일치하는지 확인해 주세요. 회송서와 처방은 불러온 뒤 별도로 확인합니다.</p><div class="patient-detail-actions">${canAttach?button('현재 회송에 불러오기','patient-attach','primary',`data-id="${selected.id}"`):''}${button('이 환자로 새 회송 시작','patient-new-case',canAttach?'small':'primary',`data-id="${selected.id}"`)}</div>${canAttach?`<p class="tiny">현재 회송: ${esc(state.caseId)}</p>`:''}<details class="support-details patient-case-history"><summary>이 환자의 회송 이력 ${patientDetail.cases.length}건</summary>${patientDetail.cases.length?patientDetail.cases.map(c=>`<div class="patient-history-row"><strong>${esc(c.case_number)}</strong><span>${esc(M.stages[c.stage])}</span></div>`).join(''):'<p class="tiny">아직 연결된 회송 이력이 없습니다.</p>'}</details>`:'<div class="empty-patient"><h2>환자를 선택해 주세요.</h2><p>검색 결과에서 ‘정보 보기’를 누르면 환자 정보와 회송 이력을 확인할 수 있습니다.</p></div>'}</section></div>`;
+      (patientRows===null&&!patientsLoading?`<section class="panel empty-patient"><h2>이름 또는 환자번호로 검색해 주세요.</h2><p>검색한 환자만 표시됩니다.</p></section>`:`<div class="patient-directory-layout"><section class="panel patient-results"><div class="panel-head"><h2>검색 결과 ${patientRows?.length??0}명</h2><span class="tiny">최대 30명</span></div>${patientsLoading?'<p role="status" class="pending">환자 목록을 불러오고 있습니다…</p>':patientRows?.length?`<div class="patient-table-scroll"><table class="patient-table"><thead><tr><th>이름</th><th>환자번호</th><th>연령대</th><th>회송 이력</th><th>확인</th></tr></thead><tbody>${patientRows.map(p=>`<tr class="${selected?.id===p.id?'selected-patient':''}"><td><strong>${esc(p.name)}</strong></td><td>${esc(p.number)}</td><td>${esc(p.age)}</td><td>${p.case_count||0}건</td><td>${button('정보 보기','patient-detail','small',`data-id="${p.id}" aria-label="${esc(p.name)} ${esc(p.number)} 정보 보기"`)}</td></tr>`).join('')}</tbody></table></div>`:`<div class="empty-patient"><h3>${patientQuery?'검색 결과가 없습니다.':'등록된 환자가 없습니다.'}</h3><p>이름·환자번호를 확인하거나 새로운 환자를 등록해 주세요.</p>${button('환자 신규 등록','patient-register','small')}</div>`}</section>
+      <section class="panel patient-details" aria-label="선택한 환자 정보">${selected?`<p class="eyebrow">선택한 환자</p><h2>${esc(selected.name)}</h2>${dl([['환자번호',esc(selected.number)],['연령대',esc(selected.age)],['연락처',esc(selected.contact||'미등록')]])}<p class="notice">이름과 환자번호가 회송 대상자와 일치하는지 확인해 주세요. 회송서와 처방은 불러온 뒤 별도로 확인합니다.</p><div class="patient-detail-actions">${canAttach?button('현재 회송에 불러오기','patient-attach','primary',`data-id="${selected.id}"`):''}${button('이 환자로 새 회송 시작','patient-new-case',canAttach?'small':'primary',`data-id="${selected.id}"`)}</div>${canAttach?`<p class="tiny">현재 회송: ${esc(state.caseId)}</p>`:''}<details class="support-details patient-case-history"><summary>이 환자의 회송 이력 ${patientDetail.cases.length}건</summary>${patientDetail.cases.length?patientDetail.cases.map(c=>`<div class="patient-history-row"><strong>${esc(c.case_number)}</strong><span>${esc(M.stages[c.stage])}</span></div>`).join(''):'<p class="tiny">아직 연결된 회송 이력이 없습니다.</p>'}</details>`:'<div class="empty-patient"><h2>환자를 선택해 주세요.</h2><p>검색 결과에서 ‘정보 보기’를 누르면 환자 정보와 회송 이력을 확인할 수 있습니다.</p></div>'}</section></div>`);
   }
+  function resetPatientSearch(){patientSearchId++;patientQuery='';patientRows=null;patientDetail=null;patientsLoading=false;patientsError='';}
   async function loadPatients(query=patientQuery){
-    if(patientsLoading)return;patientQuery=query.trim();patientsLoading=true;patientsError='';render();
-    try{const data=await P.search(patientQuery);patientRows=data.patients;if(patientDetail){if(!patientRows.some(p=>p.id===patientDetail.patient.id))patientDetail=null;else patientDetail=await P.detail(patientDetail.patient.id);}}
-    catch(e){patientsError=e.message;patientRows=[];}
-    finally{patientsLoading=false;if(view==='patients')render();}
+    if(patientsLoading)return;patientQuery=query.trim();
+    if(!patientQuery){resetPatientSearch();render();$('#patient-query')?.focus();return;}
+    const searchId=++patientSearchId;patientsLoading=true;patientsError='';patientRows=[];patientDetail=null;render();
+    try{const data=await P.search(patientQuery);if(searchId!==patientSearchId)return;patientRows=data.patients;}
+    catch(e){if(searchId!==patientSearchId)return;patientsError=e.message;patientRows=[];}
+    finally{if(searchId===patientSearchId){patientsLoading=false;if(view==='patients')render();}}
   }
+
   function patientRegisterModal(){
     modal('환자 신규 등록',`<p class="sub">한 번 등록한 환자는 이름·환자번호로 다시 불러올 수 있습니다.</p><form id="patient-register-form"><div class="patient-registration-grid"><label class="field"><span>환자 이름 <b class="required">필수</b></span><input id="patient-name" required minlength="2" maxlength="40" autocomplete="off" placeholder="예: 홍길동"></label><label class="field"><span>환자번호 · 병원 등록번호 <b class="required">필수</b></span><input id="patient-number" required minlength="3" maxlength="24" pattern="[A-Za-z0-9-]{3,24}" autocomplete="off" placeholder="예: CB-P1004"><small>영문·숫자·하이픈 3~24자</small></label><label class="field"><span>연령대 <b class="required">필수</b></span><select id="patient-age">${M.ageGroups.map(age=>`<option ${age==='70대'?'selected':''}>${age}</option>`).join('')}</select></label><label class="field"><span>연락처 <small>선택</small></span><input id="patient-contact" type="tel" inputmode="tel" maxlength="13" autocomplete="off" placeholder="예: 010-0000-0000"></label></div><p class="tiny">예시 환자만 등록해 주세요. 환자 기본 정보는 회송서 분석과 별도로 저장됩니다.</p></form>`,button('취소','close')+button('환자 등록','patient-save','primary'));
   }
@@ -344,7 +347,7 @@
     const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const a=el.dataset.action,id=el.dataset.id;
     if(a==='patients'){navigateRoute('/hospital/patients');return;}
     if(a==='patient-search'){await loadPatients($('#patient-query')?.value||patientQuery);return;}
-    if(a==='patient-list-all'){patientDetail=null;await loadPatients('');return;}
+    if(a==='patient-search-clear'){resetPatientSearch();render();$('#patient-query')?.focus();return;}
     if(a==='patient-register'){patientRegisterModal();return;}
     if(a==='patient-directory-link'){try{await P.ensure();await navigator.clipboard.writeText(location.origin+P.href());toast('의뢰기관용 환자 목록 이용 링크를 복사했습니다.');}catch(e){toast(e.message||'링크를 복사하지 못했습니다.',true);}return;}
     if(a==='patient-detail'){if(working)return;setBusy(true);try{patientDetail=await P.detail(id);setBusy(false);render();$('.patient-details')?.scrollIntoView({behavior:'smooth',block:'nearest'});}catch(e){toast(e.message,true);}finally{setBusy(false);}return;}
@@ -559,7 +562,7 @@
   document.addEventListener('change',updateFormReadiness);
   document.addEventListener('click',dispatch);
   document.addEventListener('submit',async e=>{if(e.target.id==='patient-search-form'){e.preventDefault();await loadPatients($('#patient-query').value);}if(e.target.id==='patient-register-form'){e.preventDefault();$('[data-action="patient-save"]')?.click();}});
-  document.addEventListener('input',e=>{if(e.target.id==='referral-source'&&state.stage===0){sourceDirty=true;state.source=e.target.value;state.parsed=false;state.data={};state.extraction=null;const aiButton=$('[data-action="ai-parse"]');if(aiButton)aiButton.disabled=state.source!==M.initial(state.scenario).source||!apiReady||!aiAvailable;$('[data-action="ready"]')?.closest('.work-actions')?.remove();const panel=[...document.querySelectorAll('.panel')].find(p=>p.querySelector('h2')?.textContent==='구조화된 회송 정보');if(panel)panel.innerHTML='<h2>구조화된 회송 정보</h2><p class="notice amber">문서가 수정되었습니다. 회송 정보를 다시 구조화해 주세요.</p>';save();const highlight=$('#referral-highlight');if(highlight)highlight.innerHTML=highlightedSource();renderTaskPanel();updateFormReadiness();}});
+  document.addEventListener('input',e=>{if(e.target.id==='patient-query'&&!e.target.value.trim()){resetPatientSearch();render();$('#patient-query')?.focus();return;}if(e.target.id==='referral-source'&&state.stage===0){sourceDirty=true;state.source=e.target.value;state.parsed=false;state.data={};state.extraction=null;const aiButton=$('[data-action="ai-parse"]');if(aiButton)aiButton.disabled=state.source!==M.initial(state.scenario).source||!apiReady||!aiAvailable;$('[data-action="ready"]')?.closest('.work-actions')?.remove();const panel=[...document.querySelectorAll('.panel')].find(p=>p.querySelector('h2')?.textContent==='구조화된 회송 정보');if(panel)panel.innerHTML='<h2>구조화된 회송 정보</h2><p class="notice amber">문서가 수정되었습니다. 회송 정보를 다시 구조화해 주세요.</p>';save();const highlight=$('#referral-highlight');if(highlight)highlight.innerHTML=highlightedSource();renderTaskPanel();updateFormReadiness();}});
   document.addEventListener('change',async e=>{
     const t=e.target;
     if(t.id==='scenario-select'){resetModal(t.value);return;}

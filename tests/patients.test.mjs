@@ -26,13 +26,21 @@ test('기존 회송 기록을 보존하면서 환자 테이블과 외래키 추�
  const row=(await pg.query('SELECT state,register_id,patient_id FROM cb_cases WHERE id=$1',[legacyId])).rows[0];assert.equal(row.state.caseId,'CB-026-001');assert.equal(row.patient_id,null);assert.equal(row.register_id,null);
 });
 test('목록별 환자 격리·권한 검사·이름 및 환자번호 검색',async()=>{
- const a=await newRegister(),b=await newRegister();const all=await patientRequest(a,{operation:'search',query:''});assert.equal(all.patients.length,3);
+ const a=await newRegister(),b=await newRegister();const all=await patientRequest(a,{operation:'search',query:'CB-P'});assert.equal(all.patients.length,3);
  assert.equal((await patientRequest(a,{operation:'search',query:'하늘'})).patients[0].number,'CB-P1001');
  assert.equal((await patientRequest(a,{operation:'search',query:'cb-p1002'})).patients[0].name,'박서준');
- assert.equal((await patientRequest({...a,access:b.access},{operation:'search',query:''})).status,403);
- const other=(await patientRequest(b,{operation:'search',query:''})).patients[0];assert.equal((await patientRequest(a,{operation:'detail',patientId:other.id})).status,404);
- assert.equal((await patientRequest(null,{operation:'search',query:''})).status,401);
+ assert.equal((await patientRequest({...a,access:b.access},{operation:'search',query:'CB-P'})).status,403);
+ const other=(await patientRequest(b,{operation:'search',query:'CB-P'})).patients[0];assert.equal((await patientRequest(a,{operation:'detail',patientId:other.id})).status,404);
+ assert.equal((await patientRequest(null,{operation:'search',query:'CB-P'})).status,401);
  assert.equal((await patientRequest(a,{operation:'search',query:'%'})).patients.length,0);
+});
+test('빈 검색어로 환자 목록을 노출하지 않음',async()=>{
+ const r=await newRegister();
+ for(const query of ['', '   ']){
+  const response=await patientRequest(r,{operation:'search',query});
+  assert.equal(response.status,200);assert.deepEqual(response.patients,[]);
+ }
+ assert.deepEqual(await store.searchPatients(r.id,''),[]);
 });
 test('환자 등록·선택 정보 조회·중복 환자번호와 잘못된 입력 차단',async()=>{
  const r=await newRegister(),p={name:'홍예시',number:'cb-new-21',age:'80대',contact:'010-0000-0000'};
@@ -56,10 +64,10 @@ test('한 환자를 여러 회송에 연결하고 이력을 DB에서 조회·목
  const r=await newRegister(),p=(await patientRequest(r,{operation:'search',query:'CB-P1001'})).patients[0];const a=await newCase(select(r,p.id)),b=await newCase(select(r,p.id));assert.notEqual(a.id,b.id);
  const d=await patientRequest(r,{operation:'detail',patientId:p.id});assert.equal(d.cases.length,2);
  const rows=(await pg.query('SELECT patient_id,register_id,state FROM cb_cases WHERE id=$1',[a.id])).rows[0];assert.equal(rows.patient_id,p.id);assert.equal(rows.register_id,r.id);assert.ok(!JSON.stringify(rows.state).includes(r.access));
- const unauthorized=await patientRequest({id:r.id,access:a.credentials.patient},{operation:'search',query:''});assert.equal(unauthorized.status,403);
+ const unauthorized=await patientRequest({id:r.id,access:a.credentials.patient},{operation:'search',query:'CB-P'});assert.equal(unauthorized.status,403);
 });
 test('확인 전 대상 환자를 바꾸면 이전 환자의 편집 회송서를 이어 쓰지 않음',async()=>{
- const r=await newRegister(),rows=(await patientRequest(r,{operation:'search',query:''})).patients,c=await newCase(select(r,rows[0].id));
+ const r=await newRegister(),rows=(await patientRequest(r,{operation:'search',query:'CB-P'})).patients,c=await newCase(select(r,rows[0].id));
  await action(c,'hospital',{operation:'transition',action:{type:'source',value:M.initial().source+'\n이전 환자의 메모'}});
  const changed=await action(c,'hospital',{operation:'assign-patient',patientSelection:select(r,rows[1].id)});
  assert.equal(changed.state.patient,rows[1].name);assert.equal(changed.state.source,M.initial().source);assert.equal(changed.state.parsed,false);assert.equal(changed.state.doctorApproved,false);

@@ -64,7 +64,7 @@ export function createStore(driver){
   async registerAccess(id,hash){return !!(await query('SELECT id FROM cb_patient_registers WHERE id=$1 AND access_hash=$2',[id,hash])).length;},
   async searchPatients(registerId,q){return query(`SELECT p.id,p.number,p.name,p.age_group AS age,p.contact,p.updated_at,
     (SELECT count(*)::int FROM cb_cases c WHERE c.register_id=p.register_id AND c.patient_id=p.id) AS case_count
-    FROM cb_patients p WHERE p.register_id=$1 AND ($2='' OR position(lower($2) in lower(p.name))>0 OR position(lower($2) in lower(p.number))>0)
+    FROM cb_patients p WHERE p.register_id=$1 AND $2<>'' AND (position(lower($2) in lower(p.name))>0 OR position(lower($2) in lower(p.number))>0)
     ORDER BY p.updated_at DESC,p.number LIMIT 30`,[registerId,q]);},
   async readPatient(registerId,id){return (await query('SELECT id,register_id,number,name,age_group AS age,contact,updated_at FROM cb_patients WHERE register_id=$1 AND id=$2',[registerId,id]))[0]||null;},
   async insertPatient(registerId,p){return (await query(`INSERT INTO cb_patients(id,register_id,number,name,age_group,contact)
