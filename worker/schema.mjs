@@ -1,5 +1,14 @@
 // PostgreSQL schema. Runtime bootstrap is idempotent; no destructive reset/drop.
 export const schema=[
+`CREATE TABLE IF NOT EXISTS cb_patient_registers (
+ id uuid PRIMARY KEY, access_hash text NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+)`,
+`CREATE TABLE IF NOT EXISTS cb_patients (
+ id uuid PRIMARY KEY, register_id uuid NOT NULL REFERENCES cb_patient_registers(id),
+ number text NOT NULL, name text NOT NULL, age_group text NOT NULL, contact text NOT NULL DEFAULT '',
+ created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(register_id,number)
+)`,
 `CREATE TABLE IF NOT EXISTS cb_cases (
  id uuid PRIMARY KEY, state jsonb NOT NULL, revision integer NOT NULL DEFAULT 0,
  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
@@ -30,5 +39,9 @@ export const schema=[
 `CREATE TABLE IF NOT EXISTS cb_requests (
  case_id uuid NOT NULL REFERENCES cb_cases(id), request_id uuid NOT NULL,
  revision integer NOT NULL, PRIMARY KEY(case_id,request_id)
-)`
+)`,
+`ALTER TABLE cb_cases ADD COLUMN IF NOT EXISTS register_id uuid REFERENCES cb_patient_registers(id)`,
+`ALTER TABLE cb_cases ADD COLUMN IF NOT EXISTS patient_id uuid REFERENCES cb_patients(id)`,
+`CREATE INDEX IF NOT EXISTS cb_patients_register_idx ON cb_patients(register_id)`,
+`CREATE INDEX IF NOT EXISTS cb_cases_patient_idx ON cb_cases(register_id,patient_id)`
 ];

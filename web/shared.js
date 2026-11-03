@@ -28,11 +28,11 @@
   }
   session=saved;if(session)return request();return null;
  }
- async function create(scenario){
-  const r=await fetch('/api/cases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'create',scenario}),signal:AbortSignal.timeout(15000)}),data=await r.json();if(!r.ok)throw Error(data.error||'새 회송 건을 만들지 못했습니다.');
+ async function create(scenario,patientSelection){
+  const r=await fetch('/api/cases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'create',scenario,requiresPatient:true,...(patientSelection?{patientSelection}:{})}),signal:AbortSignal.timeout(15000)}),data=await r.json();if(!r.ok)throw Error(data.error||'새 회송 건을 만들지 못했습니다.');
   session={id:data.id,revision:data.revision,credentials:data.credentials,access:data.credentials.hospital,role:'hospital',facility:null,caseId:data.state.caseId,stage:0};remember();return data;
  }
- root.CareBridgeShared={parseLink,fragment,keyFor,init,create,refresh:()=>request(),transition:action=>request({operation:'transition',action}),advance:basic=>request({operation:'advance',basic:basic===true}),href:pathHref,
+ root.CareBridgeShared={parseLink,fragment,keyFor,init,create,refresh:()=>request(),assignPatient:patientSelection=>request({operation:'assign-patient',patientSelection},'/hospital'),transition:action=>request({operation:'transition',action}),advance:basic=>request({operation:'advance',basic:basic===true}),href:pathHref,
   get active(){return !!session;},get revision(){return session?.revision;},get session(){return session;},get available(){return available;},set available(v){available=v;},
   book:()=>read(BOOK,[]),can:path=>!session||!!access(path),forget(){session=null;localStorage.removeItem(ACTIVE);},historyHref(item){return '/hospital'+fragment(item.id,item.credentials.hospital);}};
 })(typeof globalThis!=='undefined'?globalThis:this);

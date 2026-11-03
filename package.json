@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test tests/model.test.cjs tests/api.test.mjs tests/deployment.test.mjs tests/integrations.test.mjs tests/ux.test.cjs tests/agents.test.mjs tests/cases.test.mjs",
+    "test": "node --test tests/model.test.cjs tests/api.test.mjs tests/deployment.test.mjs tests/integrations.test.mjs tests/ux.test.cjs tests/agents.test.mjs tests/cases.test.mjs tests/patients.test.mjs",
     "dev": "node scripts/preview.mjs"
   },
   "dependencies": {

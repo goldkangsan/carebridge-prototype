@@ -1,10 +1,10 @@
 (function(root){
   'use strict';
-  const roles=['hospital','patient','facility'],views=['case','history','flow','guide','hospitals'];
+  const roles=['hospital','patient','facility'],views=['case','history','flow','guide','hospitals','patients'];
   const facilities=['saebom','solbit','daon','bom','haeon'];
   function path({role,view='case',facility='saebom'}={}){
     if(!roles.includes(role))return '/';
-    if(!views.includes(view)||role==='facility'&&!facilities.includes(facility))return '/';
+    if(!views.includes(view)||view==='patients'&&role!=='hospital'||role==='facility'&&!facilities.includes(facility))return '/';
     return '/'+role+(role==='facility'?'/'+facility:'')+(view==='case'?'':'/'+view);
   }
   function parse(input){
@@ -15,7 +15,7 @@
     let facility=null;
     if(role==='facility'&&parts.length&&!views.includes(parts[0])){facility=parts.shift();if(!facilities.includes(facility))return {view:'not-found',role:null,facility:null};}
     const view=parts.shift()||'case';
-    if(parts.length||!views.includes(view))return {view:'not-found',role:null,facility:null};
+    if(parts.length||!views.includes(view)||view==='patients'&&role!=='hospital')return {view:'not-found',role:null,facility:null};
     return {view,role,facility};
   }
   const api={path,parse,facilities};

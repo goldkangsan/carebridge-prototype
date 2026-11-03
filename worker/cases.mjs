@@ -1,6 +1,7 @@
 import {randomUUID,randomBytes,createHash,createHmac} from 'node:crypto';
 import {databaseConfigured,getDatabase} from './database.mjs';
 import {createAgentApi,createFacilityApi} from './agents.mjs';
+import {patientFromRegister,patientSnapshot} from './patients.mjs';
 
 export const hashToken=t=>createHash('sha256').update(t).digest('hex');
 const uuid=s=>typeof s==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s);
@@ -9,13 +10,14 @@ const allow={hospital:['attest','source','parse','applyExtraction','supplement',
 function credentialsFor(M,owner){return Object.fromEntries(['hospital','patient',...M.facilities.map(f=>'facility/'+f.id)].map(key=>[key,key==='hospital'?owner:createHmac('sha256',owner).update(key).digest('base64url')]));}
 export function projectState(M,state,grant){
  const s=structuredClone(state);
+ if(grant.role!=='hospital'&&s.patientRecord)delete s.patientRecord.registerId;
  if(grant.role==='facility'){
   const own=grant.facility,shared=s.selected===own&&s.shareConsent;
   s.responses=s.responses[own]?{[own]:s.responses[own]}:{};s.inquiries=s.inquiries.includes(own)?[own]:[];
   s.events=[];s.agentRuns=[];s.lastAgent=null;s.extraction=null;
   s.inquiryNotes=s.inquiryNotes[own]?{[own]:s.inquiryNotes[own]}:{};
   s.facilityUpdates=s.facilityUpdates[own]?{[own]:s.facilityUpdates[own]}:{};
-  if(!shared){s.patient='비식별 의뢰 대상자';s.data=Object.fromEntries(['treatment','period','isolation'].map(k=>[k,s.data[k]||'']));s.source=Object.entries(s.data).map(([k,v])=>M.fields[k]+': '+v).join('\n');s.inquiryDraft='';s.visit=null;}
+  if(!shared){s.patient='비식별 의뢰 대상자';delete s.patientRecord;s.data=Object.fromEntries(['treatment','period','isolation'].map(k=>[k,s.data[k]||'']));s.source=Object.entries(s.data).map(([k,v])=>M.fields[k]+': '+v).join('\n');s.inquiryDraft='';s.visit=null;}
  }
  return s;
 }
@@ -37,8 +39,10 @@ export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agen
    if(request.method==='POST'&&body.operation==='create'){
     if(!['normal','missing','unavailable'].includes(body.scenario))return json({error:'시나리오를 확인해 주세요.'},400);
     const id=randomUUID(),s=M.initial(body.scenario),credentials=credentialsFor(M,randomBytes(32).toString('base64url'));s.caseId='CB-'+id.slice(0,8).toUpperCase();s.accessVersion=2;
+    s.requiresPatient=body.requiresPatient===true;
+    let patient=null;if(body.patientSelection){patient=await patientFromRegister(db,body.patientSelection);if(!patient)return json({error:'환자 목록의 권한과 선택한 환자를 확인해 주세요.'},403);s.patientRecord=patientSnapshot(patient);s.patient=patient.name;s.age=patient.age;}
     const grants=Object.entries(credentials).map(([key,value])=>({hash:hashToken(value),role:key.split('/')[0],facility:key.split('/')[1]||''}));
-    const row=await db.create(id,s,grants);return response(row,{role:'hospital'},{credentials});
+    const row=await db.create(id,s,grants,patient);return response(row,{role:'hospital'},{credentials});
    }
    const id=url.searchParams.get('id'),key=request.headers.get('authorization')?.replace(/^Bearer /,'');
    if(!uuid(id)||!token(key))return json({error:'회송 건의 유효한 이용 링크가 필요합니다.'},401);
@@ -48,6 +52,14 @@ export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agen
    if(!uuid(body.requestId)||!Number.isInteger(body.revision)||body.revision<0)return json({error:'요청 정보를 확인해 주세요.'},400);
    if(await db.replay(id,body.requestId))return response(row,row,{replayed:true});
    if(row.revision!==body.revision)return response(row,row,{conflict:true});
+   if(body.operation==='assign-patient'){
+    if(row.role!=='hospital')return json({error:'의뢰기관에서만 대상 환자를 확인할 수 있습니다.'},403);
+    if(row.state.stage!==0||row.state.parsed||row.state.doctorApproved)return json({error:'회송 정보 확인 이후에는 대상 환자를 바꿀 수 없습니다. 새 회송 건을 만들어 주세요.'},422);
+    const p=await patientFromRegister(db,body.patientSelection);if(!p)return json({error:'환자 목록의 권한과 선택한 환자를 확인해 주세요.'},403);
+    const next=structuredClone(row.state);if(next.patientRecord?.id!==p.id){next.source=M.initial(next.scenario).source;next.data={};next.extraction=null;next.parsed=false;next.doctorApproved=false;}next.patientRecord=patientSnapshot(p);next.patient=p.name;next.age=p.age;
+    next.events.unshift({type:'patient',actor:'hospital',detail:'등록 환자 정보를 확인하여 회송 대상자로 불러옴',time:new Date().toISOString()});next.metrics.actions++;
+    const saved=await db.commit(row,next,body.requestId);return saved?response(saved,row):response(await db.read(id,hashToken(key)),row,{conflict:true});
+   }
    if(body.operation==='advance'){
     if(row.role==='facility')return json({error:'수용기관은 직접 회신해 주세요.'},403);
     const s=row.state;if(!(s.consent&&(s.stage===1||s.stage===2)))return response(row,row);
@@ -81,6 +93,7 @@ export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agen
     }finally{await db.release(id,lease);}
    }
    if(body.operation!=='transition'||!allow[row.role].includes(body.action?.type))return json({error:'이 화면에서 처리할 수 없는 작업입니다.'},403);
+   if(row.state.requiresPatient&&!row.state.patientRecord&&['attest','parse','applyExtraction','ready'].includes(body.action.type))return json({error:'먼저 환자를 검색하거나 등록해 회송 대상자를 확인해 주세요.'},422);
    if(row.role==='facility'&&body.action.id!==row.facility)return json({error:'해당 기관의 작업만 처리할 수 있습니다.'},403);
    const next=M.transition(row.state,body.action,row.role),saved=await db.commit(row,next,body.requestId);
    return saved?response(saved,row):response(await db.read(id,hashToken(key)),row,{conflict:true});

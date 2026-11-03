@@ -5,6 +5,7 @@ const letterFor=(status,f)=>status==='accepted'?`${f.name} 수용 담당자 회�
 export function canonicalState(M,input){
   if(!input||input.version!==1||!['normal','missing','unavailable'].includes(input.scenario)||!Number.isInteger(input.stage)||input.stage<0||input.stage>7)throw Error('시연 상태를 확인해 주세요.');
   const s=M.initial(input.scenario),expected=M.extract(s.source);
+  s.age=M.ageGroups.includes(input.age)?input.age:s.age;
   if(input.source!==s.source||!input.doctorApproved||!input.parsed||input.data?.treatment!==expected.treatment||input.data?.isolation!==expected.isolation)throw Error('AI 업무 판단은 준비된 가상 회송서의 점검 후에 사용할 수 있습니다.');
   s.data={...expected};for(const k of M.missing({data:expected}))s.data[k]=input.data[k]?'담당의 보완 확인 (값은 AI에 전송하지 않음)':'';
   s.parsed=true;s.doctorApproved=true;s.stage=input.stage;s.consent=input.consent===true;s.expanded=input.expanded===true;s.round=Number.isInteger(input.round)&&input.round>=0&&input.round<100?input.round:0;
@@ -65,7 +66,7 @@ export function createFacilityApi(M){return async request=>{
  if(request.method!=='POST')return json({error:'POST 요청만 지원합니다.'},405);
  try{if(!request.headers.get('content-type')?.includes('application/json'))return json({error:'JSON 요청이 필요합니다.'},415);const text=await request.text();if(text.length>5000)return json({error:'요청이 너무 큽니다.'},413);const {query:q,...extra}=JSON.parse(text);if(Object.keys(extra).length||!q||Object.keys(q).some(k=>!['id','scenario','round','profile','expanded','consent','inquiryOpen','capabilities','summary','informationProvided','message'].includes(k)))return json({error:'비식별 문의 요약만 지원합니다.'},400);
  if(!['normal','missing','unavailable'].includes(q.scenario)||!M.profiles[q.profile]||!Number.isInteger(q.round)||q.round<1||q.round>99||q.consent!==true||q.inquiryOpen!==true)return json({error:'동의된 문의를 확인해 주세요.'},422);
- const id=q.id,s=M.initial(q.scenario);s.stage=2;s.parsed=true;s.doctorApproved=true;s.data=M.extract(s.source);s.consent=true;s.round=q.round;s.preferences={profile:q.profile,priority:q.profile==='budget'?'cost':'distance',maxKm:M.profiles[q.profile].maxKm};s.expanded=q.expanded===true;s.inquiries=[id];
+ const id=q.id,s=M.initial(q.scenario);if(!M.ageGroups.includes(q.summary?.age))return json({error:'연령대 정보를 확인해 주세요.'},422);s.age=q.summary.age;s.stage=2;s.parsed=true;s.doctorApproved=true;s.data=M.extract(s.source);s.consent=true;s.round=q.round;s.preferences={profile:q.profile,priority:q.profile==='budget'?'cost':'distance',maxKm:M.profiles[q.profile].maxKm};s.expanded=q.expanded===true;s.inquiries=[id];
  if(!M.facilities.some(f=>f.id===id)||!q.capabilities||!Number.isInteger(q.capabilities.beds)||q.capabilities.beds<0||q.capabilities.beds>20||typeof q.capabilities.iv!=='boolean'||typeof q.capabilities.isolation!=='boolean')return json({error:'기관 등록 정보를 확인해 주세요.'},422);
  s.facilityUpdates[id]={iv:q.capabilities.iv,isolation:q.capabilities.isolation,beds:q.capabilities.beds};const f=M.candidates(s).find(f=>f.id===id);
  if(!f.eligible||!q.summary||Object.keys(q.summary).some(k=>!['age','treatment','period','isolation'].includes(k))||q.summary.age!==s.age||!['treatment','period','isolation'].every(k=>q.summary[k]===s.data[k]))return json({error:'동의된 가상 비식별 요약과 맞지 않습니다.'},422);

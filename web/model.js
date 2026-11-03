@@ -10,6 +10,7 @@
   const profiles={balanced:{label:'거리·비용 균형',text:'보호자 거주지 25km 안에서 이동 거리와 비용을 함께 비교하고 싶어요.',maxKm:25,maxCost:0,maxMinutes:0,weights:{travel:.45,cost:.25,quality:.15,response:.15}},nearby:{label:'가까운 곳 우선',text:'보호자가 자주 방문하므로 15km 이내의 가까운 기관을 우선하고 싶어요.',maxKm:15,maxCost:0,maxMinutes:0,weights:{travel:.65,cost:.1,quality:.15,response:.1}},budget:{label:'하루 4만원 이내',text:'하루 예상 부담 4만원 이하, 25km 이내에서 비교하고 싶어요.',maxKm:25,maxCost:40000,maxMinutes:0,weights:{travel:.15,cost:.65,quality:.1,response:.1}},family:{label:'30분 이내 이동',text:'보호자 방문 시간이 제한되어 편도 30분 이내로 이동할 수 있는 기관을 원해요.',maxKm:25,maxCost:0,maxMinutes:30,weights:{travel:.6,cost:.15,quality:.1,response:.15}}};
   const institutionMetrics={saebom:{quality:88,responseRate:96,mismatchRate:2,beds:2},solbit:{quality:82,responseRate:91,mismatchRate:4,beds:1},daon:{quality:92,responseRate:72,mismatchRate:12,beds:3},bom:{quality:75,responseRate:86,mismatchRate:7,beds:2},haeon:{quality:85,responseRate:94,mismatchRate:3,beds:2}};
   const stages=['회송 정보','기관 문의','수용 응답','환자 선택','전원 준비','첫 진료 회신','의뢰기관 확인','연계 완료'];
+  const ageGroups=['10대 미만','10대','20대','30대','40대','50대','60대','70대','80대','90대 이상'];
   const fields={treatment:'필요 처치',drug:'약제',dose:'용량',interval:'투여 간격',period:'치료 기간',isolation:'격리 여부'};
   const sourceText = '이 문서는 가상 사례입니다. 실제 처방에 사용할 수 없습니다.\n회송 결정: 담당의 확인\n필요 처치: 정맥 항생제 치료 지속\n약제: 가상약 A\n용량: 담당의 원 처방 참조 (시연)\n투여 간격: 담당의 기록 기준 (시연)\n치료 기간: 회송 후 7일 (가상)\n격리 여부: 해당 없음\n환자 선호: 보호자 거주지 인근, 이동 부담이 적은 기관';
   function initial(scenario='normal') {
@@ -48,7 +49,7 @@
   function facilityRequest(s,id){const f=candidates(s).find(f=>f.id===id);return {id,scenario:s.scenario,round:s.round,profile:s.preferences.profile||'balanced',expanded:!!s.expanded,consent:s.consent===true,inquiryOpen:s.stage===2&&s.inquiries.includes(id),capabilities:f?{iv:f.iv,isolation:f.isolation,beds:f.beds}:null,summary:{age:s.age,treatment:s.data.treatment,period:s.data.period,isolation:s.data.isolation},informationProvided:!!s.inquiryNotes?.[id],message:s.inquiryDraft||''};}
   function summary(s,facilityId) {
     const shared=s.selected===facilityId&&s.shareConsent;
-    return {caseId:s.caseId,age:s.age,treatment:s.data.treatment||'구조화 전',isolation:s.data.isolation||'확인 필요',period:s.data.period||'확인 필요',
+    return {caseId:s.caseId,age:s.age,treatment:s.data.treatment||'구조화 전',isolation:s.data.isolation||'확인 필요',period:s.data.period||'확인 필요',patientNumber:shared?s.patientRecord?.number:null,contact:shared?s.patientRecord?.contact:null,
       patient:shared?s.patient:null,drug:shared?s.data.drug:null,dose:shared?s.data.dose:null,interval:shared?s.data.interval:null,shared};
   }
   function transition(state,action,actor='hospital') {
@@ -93,7 +94,7 @@
     s.metrics.started=s.metrics.started||Date.now();s.metrics.actions++;
     s.events.unshift({type:action.type,actor,detail,time:new Date().toISOString()});return s;
   }
-  const api={facilities,profiles,profile,score,agentAction,facilityRequest,stages,fields,initial,extract,missing,candidates,accepted,summary,transition};
+  const api={facilities,profiles,profile,score,agentAction,facilityRequest,stages,ageGroups,fields,initial,extract,missing,candidates,accepted,summary,transition};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.CareBridge=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
