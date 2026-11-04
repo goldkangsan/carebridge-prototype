@@ -6,7 +6,7 @@ import {patientFromRegister,patientSnapshot} from './patients.mjs';
 export const hashToken=t=>createHash('sha256').update(t).digest('hex');
 const uuid=s=>typeof s==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s);
 const token=s=>typeof s==='string'&&/^[A-Za-z0-9_-]{43}$/.test(s);
-const allow={hospital:['attest','source','parse','applyExtraction','supplement','ready','provideInfo','expand','prep','handoff','ack','relink','transferPlan','handoffRequest','send','publish'],patient:['customPreferences','profile','preferences','consent','choose','rejectCandidates'],facility:['facilityUpdate','response','visit']};
+const allow={hospital:['requestDetails','attest','source','parse','applyExtraction','supplement','ready','provideInfo','expand','prep','handoff','ack','relink','transferPlan','handoffRequest','send','publish'],patient:['customPreferences','profile','preferences','consent','choose','rejectCandidates'],facility:['facilityUpdate','response','visit']};
 function credentialsFor(M,owner){return Object.fromEntries(['hospital','patient',...M.facilities.map(f=>'facility/'+f.id)].map(key=>[key,key==='hospital'?owner:createHmac('sha256',owner).update(key).digest('base64url')]));}
 export function projectState(M,state,grant){
  const s=structuredClone(state);
@@ -15,7 +15,7 @@ export function projectState(M,state,grant){
   const own=grant.facility,shared=s.selected===own&&s.shareConsent;
   s.responses=s.responses[own]?{[own]:s.responses[own]}:{};s.inquiries=s.inquiries.includes(own)?[own]:[];
   s.events=[];s.agentRuns=[];s.lastAgent=null;s.extraction=null;
-  s.inquiryNotes=s.inquiryNotes[own]?{[own]:s.inquiryNotes[own]}:{};
+  s.inquiryNotes=s.inquiryNotes[own]?{[own]:s.inquiryNotes[own]}:{};s.inquiryRequests=s.inquiryRequests?.[own]?{[own]:s.inquiryRequests[own]}:{};
   s.facilityUpdates=s.facilityUpdates[own]?{[own]:s.facilityUpdates[own]}:{};
   if(!shared){s.patient='비식별 의뢰 대상자';delete s.patientRecord;s.data=Object.fromEntries(['treatment','period','isolation'].map(k=>[k,s.data[k]||'']));s.transferPlan=null;s.source=Object.entries(s.data).map(([k,v])=>M.fields[k]+': '+v).join('\n');s.inquiryDraft='';s.visit=null;}
  }
@@ -39,7 +39,7 @@ export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agen
    if(request.method==='POST'&&body.operation==='create'){
     if(!['normal','missing','unavailable'].includes(body.scenario))return json({error:'시나리오를 확인해 주세요.'},400);
     const id=randomUUID(),s=M.initial(body.scenario),credentials=credentialsFor(M,randomBytes(32).toString('base64url'));s.caseId='CB-'+id.slice(0,8).toUpperCase();s.accessVersion=2;
-    s.requiresPatient=body.requiresPatient===true;s.requiresSchedule=body.requiresSchedule===true;
+    s.requiresPatient=body.requiresPatient===true;s.requiresSchedule=body.requiresSchedule===true;s.requiresCoordination=body.requiresCoordination===true;
     let patient=null;if(body.patientSelection){patient=await patientFromRegister(db,body.patientSelection);if(!patient)return json({error:'환자 목록의 권한과 선택한 환자를 확인해 주세요.'},403);s.patientRecord=patientSnapshot(patient);s.patient=patient.name;s.age=patient.age;}
     const grants=Object.entries(credentials).map(([key,value])=>({hash:hashToken(value),role:key.split('/')[0],facility:key.split('/')[1]||''}));
     const row=await db.create(id,s,grants,patient);return response(row,{role:'hospital'},{credentials});
