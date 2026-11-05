@@ -269,7 +269,7 @@
   }
 
   function highlightedText(text,clean=false,supplements=null){
-    return U.sourceSegments(text).map(line=>{
+    return U.sourceSegments(text).filter(line=>line.text?.trim()!=='이 문서는 가상 사례입니다. 실제 처방에 사용할 수 없습니다.').map(line=>{
       if(line.kind==='text')return `<p class="referral-note">${(clean?displayFact(line.text):esc(serviceText(line.text)))||'&nbsp;'}</p>`;
       let value;
       if(line.missing&&supplements?.[line.key])value=`<div class="supplemented-field"><span class="source-origin">원문 미기재</span><mark class="referral-token token-${line.kind}">${esc(serviceText(supplements[line.key]))}</mark><span class="supplement-label">담당의 보완 회신</span></div>`;
