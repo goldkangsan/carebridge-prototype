@@ -73,32 +73,22 @@ export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agen
    }
    if(body.operation==='advance'){
     if(row.role==='facility')return json({error:'수용기관은 직접 회신해 주세요.'},403);
-    const s=row.state;if(!(s.consent&&(s.stage===1||s.stage===2)))return response(row,row);
+    const s=row.state;if(!s.consent||s.stage!==2||s.manualInquiry)return response(row,row);
     const lease=randomUUID();if(!await db.claim(id,lease))return response(row,row,{processing:true});
     try{
      let next=structuredClone(s);
      if(body.basic===true)next.inquiryDraft=['treatment','period','isolation'].map(k=>M.fields[k]+': '+next.data[k]).join('\n');
-     if(s.stage===1){
-      if(body.basic===true){next.automationMode='basic';next.lastAgent=null;next=M.transition(next,{type:'send'},'hospital');}
-      else{
-      const r=await agent(new Request(url.origin+'/api/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:s})})),a=await r.json();
-      if(!r.ok)return json({error:a.error||'자동 처리를 잠시 후 다시 시도해 주세요.'},503);
-      next=M.transition(next,{type:'recordAgent',result:a},'hospital');
-      if(a.nextAction==='send_inquiries')next=M.transition(next,{type:'send'},'hospital');
-      }
-     }else{
-      const pending=s.inquiries.filter(f=>!s.responses[f]);
-      if(pending.length){
-       const replies=await Promise.all(pending.map(async f=>{const r=await facility(new Request(url.origin+'/api/facility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:M.facilityRequest(next,f)})}));if(!r.ok)throw Error('기관 응답을 확인하지 못했습니다.');return (await r.json()).receipt;}));
-       for(const receipt of replies)next=M.transition(next,{type:'receipt',receipt},'simulation');
-      }
-      if(body.basic===true){next.automationMode='basic';next.lastAgent=null;if(M.accepted(next).length)next=M.transition(next,{type:'publish'},'hospital');}
-      else{
-      const r=await agent(new Request(url.origin+'/api/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:next})})),a=await r.json();
-      if(!r.ok)return json({error:a.error||'회신 분석을 다시 시도해 주세요.'},503);
-      next=M.transition(next,{type:'recordAgent',result:a},'hospital');
-      if(a.nextAction==='present_candidates'&&M.accepted(next).length)next=M.transition(next,{type:'publish'},'hospital');
-      }
+     const pending=s.inquiries.filter(f=>!s.responses[f]);
+     if(pending.length){
+      const replies=await Promise.all(pending.map(async f=>{const r=await facility(new Request(url.origin+'/api/facility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:M.facilityRequest(next,f)})}));if(!r.ok)throw Error('기관 응답을 확인하지 못했습니다.');return (await r.json()).receipt;}));
+      for(const receipt of replies)next=M.transition(next,{type:'receipt',receipt},'simulation');
+     }
+     if(body.basic===true){next.automationMode='basic';next.lastAgent=null;if(M.accepted(next).length)next=M.transition(next,{type:'publish'},'hospital');}
+     else{
+     const r=await agent(new Request(url.origin+'/api/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:next})})),a=await r.json();
+     if(!r.ok)return json({error:a.error||'회신 분석을 다시 시도해 주세요.'},503);
+     next=M.transition(next,{type:'recordAgent',result:a},'hospital');
+     if(a.nextAction==='present_candidates'&&M.accepted(next).length)next=M.transition(next,{type:'publish'},'hospital');
      }
      const saved=await db.commit(row,next,body.requestId);return saved?response(saved,row):response(await db.read(id,hashToken(key)),row,{conflict:true});
     }finally{await db.release(id,lease);}

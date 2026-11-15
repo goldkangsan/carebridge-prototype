@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const M=require('../web/model.js');
 const U=require('../web/ux.js');
 function ready(scenario='normal'){let s=M.transition(M.initial(scenario),{type:'attest',value:true});s=M.transition(s,{type:'parse'});return M.transition(s,{type:'ready'});}
-function sent(scenario='normal'){let s=ready(scenario);s=M.transition(s,{type:'consent',value:true},'patient');return M.transition(s,{type:'send'});}
+function sent(scenario='normal'){let s=ready(scenario);s=M.transition(s,{type:'consent',value:true},'patient');return M.transition(s,{type:'send',ids:M.candidates(s).filter(f=>f.eligible).map(f=>f.id)});}
 test('처치 역량이 있어도 이동 범위 제외 기관은 수용 가능으로 표시하지 않음',()=>{
  const s=ready(),f=M.candidates(s).find(x=>x.id==='haeon');assert.equal(f.iv,true);assert.equal(f.eligible,false);assert.equal(U.facilityStatus(f,s).label,'문의 대상 제외');assert.equal(U.facilityStatus(f,s).tone,'neutral');
 });
@@ -18,9 +18,9 @@ test('담당의 확인이나 누락 보완을 건너뛰는 다음 행동을 제�
 });
 test('동의 체크 초안과 실제 문의 시작을 구분',()=>{
  const s=ready();assert.equal(U.nextTask(s,'patient').action,'focus-consent');assert.equal(U.nextTask(s,'patient',{consentDraft:true}).action,'consent-start');assert.equal(s.consent,false);assert.equal(s.inquiries.length,0);
- const consent=M.transition(s,{type:'consent',value:true},'patient');assert.equal(U.nextTask(consent,'hospital',{auto:false}).action,'send');assert.equal(U.nextTask(consent,'patient',{auto:true}).action,null);
+ const consent=M.transition(s,{type:'consent',value:true},'patient');assert.equal(U.nextTask(consent,'hospital',{auto:true}).title,'문의할 기관을 선택해 주세요.');assert.equal(U.nextTask(consent,'patient',{auto:true}).action,null);
 });
-test('자동 응답 수집 중 불필요한 역할 전환을 요구하지 않음',()=>{
+test('선택 문의에서 답변을 기다리는 동안 불필요한 역할 전환을 요구하지 않음',()=>{
  const s=sent();assert.equal(U.nextTask(s,'hospital',{auto:true}).action,null);assert.equal(U.nextTask(s,'patient',{auto:true}).action,null);
 });
 test('수용 불가·추가 정보 요청 시 후보 공개 대신 예외 처리 안내',()=>{
@@ -56,7 +56,7 @@ test('요청 링크 복사와 실제 상대 응답을 구분하고 이전 문의
  let s=ready();let h=U.handoffStatus(s,'patient');assert.equal(h.copied,false);assert.equal(h.response,false);
  s=M.transition(s,{type:'handoffRequest',target:'patient'});h=U.handoffStatus(s,'patient');assert.equal(h.copied,true);assert.equal(h.response,false);
  s=M.transition(s,{type:'consent',value:true},'patient');assert.equal(U.handoffStatus(s,'patient').response,true);
- s=M.transition(s,{type:'send'});s=M.transition(s,{type:'handoffRequest',target:'facility'});assert.equal(U.handoffStatus(s,'facility').response,false);
+ s=M.transition(s,{type:'send',ids:M.candidates(s).filter(f=>f.eligible).map(f=>f.id)});s=M.transition(s,{type:'handoffRequest',target:'facility'});assert.equal(U.handoffStatus(s,'facility').response,false);
  s=M.transition(s,{type:'demoResponses'},'simulation');assert.equal(U.handoffStatus(s,'facility').response,true);
  s=M.transition(s,{type:'expand'});assert.equal(U.handoffStatus(s,'patient').copied,false);assert.equal(U.handoffStatus(s,'patient').response,false);
 });

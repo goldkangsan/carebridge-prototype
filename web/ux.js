@@ -25,12 +25,11 @@
     }
     if(s.stage===1&&!s.consent){
       if(role!=='patient')return switchTo('patient','기관 문의에 앞서 환자 동의가 필요합니다.','환자·보호자 화면에서 희망 조건과 문의 동의를 확인합니다.');
-      return make('희망 조건을 확인하고 기관 탐색을 시작해 주세요.','동의 항목을 체크한 뒤 시작 버튼을 누르면 문의와 모의 응답 수집이 자동으로 진행됩니다.',o.consentDraft?'consent-start':'focus-consent',o.consentDraft?'동의하고 기관 찾기':'문의 동의 확인하기');
+      return make('희망 조건을 확인하고 기관 탐색을 시작해 주세요.','동의를 기록하면 의뢰기관 담당자가 문의할 기관을 선택합니다.',o.consentDraft?'consent-start':'focus-consent',o.consentDraft?'기관 문의에 동의하기':'문의 동의 확인하기');
     }
     if(s.stage===1&&s.consent&&o.noCandidates)return role==='patient'?make('희망 조건을 충족하는 기관이 없습니다.','비용·이동 조건을 다시 선택하거나 담당자에게 예외 처리를 요청해 주세요.','focus-preferences','희망 조건 다시 확인','patient','amber'):switchTo('patient','조건 조정이 필요합니다.','현재 조건에 맞는 기관이 없습니다. 환자·보호자와 조건을 다시 확인합니다.');
     if(s.stage===1){
-      if(o.auto)return make('조건에 맞는 기관에 문의를 준비하고 있습니다.','환자 동의를 확인했습니다. 자동 문의가 시작될 때까지 기다려 주세요.',null,null,'hospital','pending');
-      return role==='hospital'?make('환자 동의를 확인했습니다.','비식별 요약을 조건에 맞는 기관에 보냅니다.','send','수용 문의 보내기'):switchTo('hospital','기관 문의를 시작할 수 있습니다.','의뢰기관에서 비식별 요약을 문의 대상 기관에 보냅니다.');
+      return role==='hospital'?make('문의할 기관을 선택해 주세요.','아래 협력병원 목록에서 이번 회송 건을 문의할 기관을 고릅니다.'):switchTo('hospital','의뢰기관에서 문의 대상을 확인하고 있어요.','선택한 기관에 문의하면 답변을 기다립니다.');
     }
     if(s.stage===2){
       const answered=s.inquiries.filter(id=>s.responses[id]).length,accepted=s.inquiries.filter(id=>s.responses[id]?.status==='accepted').length;
@@ -44,8 +43,9 @@
         if(role!=='hospital')return switchTo('hospital','의뢰기관의 추가 확인이 필요합니다.','현재 수용이 확인된 기관이 없습니다. 추가 정보 요청 또는 탐색 범위를 확인합니다.');
         return id?make('기관이 요청한 정보를 확인해 주세요.','담당의가 확인한 보완 내용을 회신하면 해당 기관이 다시 응답할 수 있습니다.','more-info','추가 정보 요청 확인하기','hospital','amber',id):make('현재 범위에서 수용 가능한 기관이 없습니다.','이동 범위를 넓힌 뒤 환자 동의를 다시 받아 재문의합니다.','expand','범위 넓혀 다시 찾기','hospital','amber');
       }
-      if(o.auto)return make('기관 응답을 모으고 있습니다.','응답 '+answered+'/'+s.inquiries.length+'곳 · 수용 가능 '+accepted+'곳. 응답 수집 후 비교 가능한 후보를 자동으로 안내합니다.',null,null,'facility','pending');
+      if(o.auto&&!s.manualInquiry)return make('기관 응답을 모으고 있습니다.','응답 '+answered+'/'+s.inquiries.length+'곳 · 수용 가능 '+accepted+'곳. 응답 수집 후 비교 가능한 후보를 자동으로 안내합니다.',null,null,'facility','pending');
       if(role==='hospital'&&accepted)return make('수용 가능한 기관을 환자에게 안내해 주세요.','수용 가능 응답이 있는 기관만 환자 비교 화면에 공개합니다.','publish','환자에게 후보 안내하기');
+      if(role==='hospital'&&s.manualInquiry)return make('기관별 회신을 확인해 주세요.','아래 표에서 기관별 요청 링크와 회신 상태를 확인할 수 있습니다.',null,null,'facility','pending');
       return switchTo('facility','수용기관의 응답을 기다리고 있습니다.','수용기관 화면으로 이동해 응답을 입력할 수 있습니다.');
     }
     if(s.stage===3){
@@ -104,8 +104,8 @@
     if(done)return {done:true,actionable:false,owner:'완료',next:c.stage===7?'처리 기록 확인':'다른 기관 선택으로 문의 종료',label:'완료'};
     if(role==='hospital'){
       if([0,4,6].includes(c.stage)){actionable=true;next=({0:'회송 정보 확인',4:'방문 안내·전원 준비',6:c.visit_result==='missed'?'미이행 사유 확인·재연계':'첫 진료 회신 최종 확인'})[c.stage];}
-      if(c.stage===1){actionable=!!c.consent&&!auto;next=c.consent?'기관 문의 진행':'환자 동의 요청·확인';}
-      if(c.stage===2){const ids=c.inquiries||[],rs=ids.map(id=>c.responses?.[id]);const complete=ids.length>0&&rs.every(Boolean),accepted=rs.some(r=>r?.status==='accepted');const more=rs.filter(r=>r?.status==='more').length;if(more){actionable=true;owner='의뢰기관';next='기관 요청 정보 보완 '+more+'건';}else if(complete&&!accepted){actionable=true;owner='의뢰기관';next='수용 불가 사유 확인·재탐색';}else if(accepted&&!auto){actionable=true;next='수용 확인 후보 안내';}else next='기관 수용 응답 확인';}
+      if(c.stage===1){actionable=!!c.consent;next=c.consent?'문의할 기관 선택':'환자 동의 요청·확인';}
+      if(c.stage===2){const ids=c.inquiries||[],rs=ids.map(id=>c.responses?.[id]);const complete=ids.length>0&&rs.every(Boolean),accepted=rs.some(r=>r?.status==='accepted');const more=rs.filter(r=>r?.status==='more').length;if(more){actionable=true;owner='의뢰기관';next='기관 요청 정보 보완 '+more+'건';}else if(complete&&!accepted){actionable=true;owner='의뢰기관';next='수용 불가 사유 확인·재탐색';}else if(accepted&&(!auto||c.manual_inquiry||c.manualInquiry)){actionable=true;next='수용 확인 후보 안내';}else next='기관 수용 응답 확인';}
       if(c.stage===3)next='환자 병원 선택 요청·확인';if(c.stage===5)next='기관 첫 진료 회신 요청·확인';
     }else if(role==='patient'){
       actionable=c.stage===1&&!c.consent||c.stage===3;

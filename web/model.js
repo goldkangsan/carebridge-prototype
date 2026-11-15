@@ -102,7 +102,21 @@
       case 'receipt': role('simulation');at(2);need(s.inquiries.includes(action.receipt?.id)&&!s.responses[action.receipt.id],'문의 또는 응답 상태를 확인해 주세요.');need(action.receipt.status!=='accepted'||!s.requiresCoordination||offerValid(action.receipt.offer),'기관 회신의 가능한 방문 일정을 확인해 주세요.');need(action.receipt.provider==='CareBridge Facility Sandbox'&&action.receipt.simulated&&['accepted','rejected','more'].includes(action.receipt.status),'기관 시연 API 응답 형식이 아닙니다.');s.responses[action.receipt.id]={status:action.receipt.status,reason:action.receipt.reason,at:action.receipt.at,simulated:true,receiptId:action.receipt.requestId,letter:action.receipt.letter,sentMessage:action.receipt.sentMessage,offer:action.receipt.offer||null};detail=facilities.find(f=>f.id===action.receipt.id).name+' 기관 시연 API 회신 수신';break;
       case 'preferences': role('patient');need(s.stage<4,'기관 선택 후에는 조건을 변경할 수 없습니다.');need(['distance','cost'].includes(action.priority),'정렬 기준을 확인해 주세요.');s.preferences.priority=action.priority;detail='환자·보호자 우선 조건 반영';break;
       case 'consent': role('patient');need(s.stage<4,'진행 단계를 확인해 주세요.');s.consent=!!action.value;if(!s.consent&&s.stage>=2){s.stage=1;s.inquiries=[];s.responses={};}detail=s.consent?'비식별 요약을 이용한 기관 문의 동의':'기관 문의 동의 철회 · 진행 문의 중단';break;
-      case 'send': role('hospital');at(1);need(s.consent,'환자·보호자의 비식별 기관 문의 동의가 필요합니다.');need(!missing(s).length,'회송서 필수 항목을 먼저 보완해 주세요.');s.inquiries=candidates(s).filter(f=>f.eligible).map(f=>f.id);need(s.inquiries.length,'조건에 맞는 기관이 없습니다.');s.responses={};s.round++;s.stage=2;s.exception=null;detail=s.inquiries.length+'개 가상 기관에 비식별 수용 문의 생성 · 실제 전송 없음';break;
+      case 'send': {
+        role('hospital');at(1);
+        need(s.consent,'환자·보호자의 비식별 기관 문의 동의가 필요합니다.');
+        need(!missing(s).length,'회송서 필수 항목을 먼저 보완해 주세요.');
+        const ids=action.ids;
+        need(Array.isArray(ids)&&ids.length>0,'문의할 기관을 선택해 주세요.');
+        const eligible=new Set(candidates(s).filter(f=>f.eligible).map(f=>f.id));
+        need(new Set(ids).size===ids.length&&ids.every(id=>eligible.has(id)),'현재 조건에서 문의 가능한 기관을 선택해 주세요.');
+        s.inquiries=[...ids];
+        s.manualInquiry=true;
+        s.responses={};s.inquiryNotes={};s.inquiryRequests={};s.lastAgent=null;
+        s.round++;s.stage=2;s.exception=null;
+        detail=ids.length+'개 가상 기관에 비식별 수용 문의 생성 · 실제 전송 없음';
+        break;
+      }
       case 'response': role('facility');at(2);need(s.inquiries.includes(action.id),'문의 대상 기관이 아닙니다.');need(['accepted','rejected','more'].includes(action.status),'응답을 선택해 주세요.');need(action.status==='accepted'||String(action.reason||'').trim(),'거절 또는 추가 확인 사유를 적어 주세요.');if(action.status==='accepted'&&(s.requiresCoordination||action.offer))need(offerValid(action.offer),'수용 가능한 일시·접수 장소·주소를 입력해 주세요.');const offer=action.status==='accepted'&&action.offer?Object.fromEntries(['when','venue','address','contact','notes'].map(k=>[k,String(action.offer[k]||'').trim()])):null;s.responses[action.id]={status:action.status,reason:String(action.reason||'수용 담당자 조건 확인'),offer,at:new Date().toISOString()};detail=facilities.find(f=>f.id===action.id).name+' 수용 응답 기록';break;
       case 'demoResponse': role('simulation');at(2);need(s.inquiries.includes(action.id),'문의 대상 기관이 아닙니다.');need(!s.responses[action.id],'이미 응답이 기록된 기관입니다.');{const f=facilities.find(f=>f.id===action.id),status=s.scenario==='unavailable'&&s.round===1?'rejected':s.inquiryNotes?.[action.id]?'accepted':f.response;s.responses[action.id]={status,reason:status==='rejected'?'희망 일정 수용 불가 (가상)':s.inquiryNotes?.[action.id]?'담당의 보완 정보 확인 후 수용 가능 (가상)':f.note,at:new Date().toISOString(),simulated:true,offer:status==='accepted'?exampleOffer(s,f):null};detail=f.name+' 모의 수용 응답 자동 수신';}break;
       case 'provideInfo': role('hospital');at(2);need(s.responses[action.id]?.status==='more','추가 정보 요청 건을 확인해 주세요.');need(action.confirmed,'담당의가 확인한 보완 정보인지 확인해 주세요.');need(String(action.note||'').trim(),'보완 회신 내용을 입력해 주세요.');s.inquiryNotes=s.inquiryNotes||{};s.inquiryNotes[action.id]=String(action.note).trim();s.inquiryRequests=s.inquiryRequests||{};s.inquiryRequests[action.id]=s.responses[action.id].reason;delete s.responses[action.id];detail='추가 정보 요청에 담당의 확인 내용 회신 · 재응답 대기';break;

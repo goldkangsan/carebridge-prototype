@@ -46,14 +46,15 @@ test('수용기관에는 동의 전 환자 식별명·약제·타 기관 응답�
 });
 test('DB 공용 상태로 동의→문의→비교→선택→준비→첫 진료→의뢰기관 확인 수행',async()=>{
  const c=await create();await ready(c);await act(c,'patient',{type:'consent',value:true});
- assert.equal((await post(c,'patient',{operation:'advance'})).state.stage,2);
- const published=await post(c,'patient',{operation:'advance'});assert.equal(published.status,200);assert.equal(published.state.stage,3);
+ await act(c,'hospital',{type:'send',ids:['solbit','daon']});
+ await act(c,'facility/solbit',{type:'response',id:'solbit',status:'accepted'});
+ const published=await act(c,'hospital',{type:'publish'});assert.equal(published.state.stage,3);
  await act(c,'patient',{type:'choose',id:'solbit',consent:true});
- const other=await read(c,'facility/saebom'),chosen=await read(c,'facility/solbit');assert.equal(other.state.data.drug,undefined);assert.equal(chosen.state.data.drug,'가상약 A');
+ const other=await read(c,'facility/daon'),chosen=await read(c,'facility/solbit');assert.equal(other.state.data.drug,undefined);assert.equal(chosen.state.data.drug,'가상약 A');
  for(const key of ['documents','transport','guidance'])await act(c,'hospital',{type:'prep',key,value:true});await act(c,'hospital',{type:'handoff'});
  await act(c,'facility/solbit',{type:'visit',id:'solbit',result:'done'});const waiting=await read(c);assert.equal(waiting.state.stage,6);assert.equal(waiting.state.ack,false);
  const done=await act(c,'hospital',{type:'ack'});assert.equal(done.state.stage,7);
- assert.equal((await pg.query('SELECT count(*)::int n FROM cb_inquiries WHERE case_id=$1',[c.id])).rows[0].n,3);
+ assert.equal((await pg.query('SELECT count(*)::int n FROM cb_inquiries WHERE case_id=$1',[c.id])).rows[0].n,2);
  const consents=(await pg.query('SELECT kind,granted FROM cb_consents WHERE case_id=$1',[c.id])).rows;assert.deepEqual(consents.map(x=>x.kind).sort(),['inquiry','selected-facility']);assert.ok(consents.every(x=>x.granted));
  const newer=await create();assert.equal(newer.state.stage,0);assert.equal((await read(c)).state.stage,7);
 });
@@ -63,10 +64,23 @@ test('다른 Origin·잘못된 ID·구성 없는 저장소 요청 차단',async(
  const unavailable=createCasesApi(M,{configured:()=>false});assert.equal((await unavailable(new Request('https://demo.test/api/cases?status=1')).then(r=>r.json())).available,false);
  assert.equal((await unavailable(new Request('https://demo.test/api/cases'))).status,503);
 });
-test('명시적으로 선택한 기본 모드는 LLM 결과로 가장하지 않고 공유 상태를 진행',async()=>{
+test('담당자가 고른 기관에만 문의가 생성되고 자동 진행이 회신이나 후보 안내를 대신하지 않음',async()=>{
  const c=await create();await ready(c);await act(c,'patient',{type:'consent',value:true});
- await post(c,'patient',{operation:'advance',basic:true});const r=await post(c,'patient',{operation:'advance',basic:true});
- assert.equal(r.state.stage,3);assert.equal(r.state.automationMode,'basic');assert.equal(r.state.lastAgent,null);assert.equal(r.state.agentRuns.length,0);
+ const unchanged=await post(c,'patient',{operation:'advance',basic:true});
+ assert.equal(unchanged.state.stage,1);assert.deepEqual(unchanged.state.inquiries,[]);
+ for(const ids of [undefined,[],['solbit','solbit'],['unknown'],['haeon']]){
+  const invalid=await post(c,'hospital',{operation:'transition',action:{type:'send',ids}});
+  assert.equal(invalid.status,422);
+ }
+ const sent=await act(c,'hospital',{type:'send',ids:['solbit','daon']});
+ assert.deepEqual(sent.state.inquiries,['solbit','daon']);
+ assert.equal((await read(c,'facility/saebom')).state.inquiries.length,0);
+ const unwanted=await post(c,'facility/saebom',{operation:'transition',action:{type:'response',id:'saebom',status:'accepted'}});
+ assert.equal(unwanted.status,422);
+ await act(c,'facility/solbit',{type:'response',id:'solbit',status:'accepted'});
+ const result=await post(c,'hospital',{operation:'advance'});
+ assert.equal(result.state.stage,2);
+ assert.deepEqual(Object.keys(result.state.responses),['solbit']);
 });
-test('자동 진행을 끈 공유 회송에서 수동 문의·기관 응답·후보 안내가 서버 권한과 일치',async()=>{const c=await create();await ready(c);await act(c,'patient',{type:'consent',value:true});assert.equal((await act(c,'hospital',{type:'send'})).state.stage,2);await act(c,'facility/saebom',{type:'response',id:'saebom',status:'accepted',reason:'조건 확인'});assert.equal((await act(c,'hospital',{type:'publish'})).state.stage,3);});
-test('발표자용 무응답·모의 응답은 의뢰기관만 현재 문의 단계에 기록',async()=>{const c=await create();assert.equal((await post(c,'hospital',{operation:'simulate',action:{type:'demoResponses'}})).status,422);await ready(c);await act(c,'patient',{type:'consent',value:true});await act(c,'hospital',{type:'send'});assert.equal((await post(c,'patient',{operation:'simulate',action:{type:'timeout',id:'saebom'}})).status,403);assert.equal((await post(c,'facility/saebom',{operation:'simulate',action:{type:'demoResponses'}})).status,403);const timed=await post(c,'hospital',{operation:'simulate',action:{type:'timeout',id:'saebom'}});assert.equal(timed.state.responses.saebom.status,'timeout');assert.equal(timed.state.events[0].actor,'simulation');const rest=await post(c,'hospital',{operation:'simulate',action:{type:'demoResponses'}});assert.equal(rest.status,200);assert.equal(rest.state.responses.saebom.status,'timeout');assert.equal(rest.state.responses.solbit.status,'accepted');});
+test('자동 진행을 끈 공유 회송에서 수동 문의·기관 응답·후보 안내가 서버 권한과 일치',async()=>{const c=await create();await ready(c);await act(c,'patient',{type:'consent',value:true});assert.equal((await act(c,'hospital',{type:'send',ids:['saebom','solbit','daon']})).state.stage,2);await act(c,'facility/saebom',{type:'response',id:'saebom',status:'accepted',reason:'조건 확인'});assert.equal((await act(c,'hospital',{type:'publish'})).state.stage,3);});
+test('발표자용 무응답·모의 응답은 의뢰기관만 현재 문의 단계에 기록',async()=>{const c=await create();assert.equal((await post(c,'hospital',{operation:'simulate',action:{type:'demoResponses'}})).status,422);await ready(c);await act(c,'patient',{type:'consent',value:true});await act(c,'hospital',{type:'send',ids:['saebom','solbit','daon']});assert.equal((await post(c,'patient',{operation:'simulate',action:{type:'timeout',id:'saebom'}})).status,403);assert.equal((await post(c,'facility/saebom',{operation:'simulate',action:{type:'demoResponses'}})).status,403);const timed=await post(c,'hospital',{operation:'simulate',action:{type:'timeout',id:'saebom'}});assert.equal(timed.state.responses.saebom.status,'timeout');assert.equal(timed.state.events[0].actor,'simulation');const rest=await post(c,'hospital',{operation:'simulate',action:{type:'demoResponses'}});assert.equal(rest.status,200);assert.equal(rest.state.responses.saebom.status,'timeout');assert.equal(rest.state.responses.solbit.status,'accepted');});

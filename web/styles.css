@@ -175,3 +175,15 @@ body:not([data-workspace="patient"]) .staff-facility.staff-row{display:block;bor
 .condition-tags{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 18px}.condition-tags span{padding:6px 10px;background:var(--navy-soft);border:1px solid var(--line);border-radius:5px;font-size:12px;color:var(--workspace-accent,var(--navy))}.condition-fit{font-size:12px;color:var(--green);margin:10px 0}.supplement-arrived{border-left:4px solid var(--amber);padding:16px 18px;margin:0 0 20px;background:#fff7e7}.supplement-arrived h3{color:#80510e}.supplement-arrived p:last-child{margin-bottom:0}.directory-context{font-size:11px;font-weight:400;color:var(--muted);display:block;margin-top:6px}.family-context{padding:10px 0 16px;font-size:14px;color:var(--muted)}body[data-workspace="patient"] .workspace{display:block;max-width:1180px}body[data-workspace="patient"] header{height:72px;flex-wrap:nowrap}body[data-workspace="patient"] header .current-workspace{margin-left:auto}body[data-workspace="patient"] .page-heading{margin-bottom:8px}.work-overview{grid-template-columns:repeat(4,minmax(0,1fr));max-width:960px}.wait-age{font-size:11px;color:var(--muted)}.wait-age.long-wait{color:var(--amber);font-weight:650}#offer-fields{padding:16px 0;border-top:1px solid var(--line);margin-top:18px}#visit-date-fields{padding:14px 0}#visit-change-confirm[hidden],#visit-date-fields[hidden],#offer-fields[hidden]{display:none!important}.request-details form>button{margin-right:12px}
 @media(max-width:760px){.work-overview{grid-template-columns:repeat(2,minmax(0,1fr))}.family-context{font-size:12px;padding-bottom:8px}body[data-workspace="patient"] header{padding:10px 14px}body[data-workspace="patient"] header .current-workspace{font-size:10px;padding:5px}body[data-workspace="patient"] main{padding-top:20px}.condition-tags{gap:5px}.condition-tags span{font-size:11px;padding:5px 8px}.supplement-arrived{padding:14px}.choice-actions:has(button:only-of-type){grid-template-columns:1fr}.intake-facts{line-height:1.9}}
 .offer-summary{padding:12px 14px;margin:10px 0;background:var(--navy-soft);border-radius:5px;display:flex;flex-direction:column;gap:5px}.offer-summary strong{font-size:15px}.offer-summary small{font-size:11px;color:var(--muted)}
+
+.inquiry-work .inquiry-counts { margin: 12px 0 16px; }
+.inquiry-work .inquiry-actions { margin-top: 16px; }
+.inquiry-actions .sub { margin: 0; }
+.inquiry-choices { display: grid; gap: 8px; }
+.inquiry-choice { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 7px; }
+.inquiry-choice:has(input:checked) { background: var(--navy-soft); border-color: var(--accent-border); }
+.inquiry-table { min-width: 580px; }
+.inquiry-table tbody th { color: var(--ink); background: transparent; font-size: 13px; }
+.inquiry-table td small, .inquiry-table th small { display: block; margin-top: 4px; color: var(--muted); }
+.inquiry-table td:nth-child(3) { min-width: 145px; overflow-wrap: anywhere; }
+.inquiry-table td:last-child { white-space: nowrap; }
