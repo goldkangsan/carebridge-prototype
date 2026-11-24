@@ -2,7 +2,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const M=require('../web/model.js');
 const U=require('../web/ux.js');
-function ready(scenario='normal'){let s=M.transition(M.initial(scenario),{type:'attest',value:true});s=M.transition(s,{type:'parse'});return M.transition(s,{type:'ready'});}
+function ready(scenario='normal'){let s=M.transition(M.initial(scenario),{type:'attest',value:true});s=M.transition(s,{type:'parse'});s=M.transition(s,{type:'clinicalReview',confirmed:true,reviewer:'검증 담당자'});return M.transition(s,{type:'ready'});}
 function sent(scenario='normal'){let s=ready(scenario);s=M.transition(s,{type:'consent',value:true},'patient');return M.transition(s,{type:'send',ids:M.candidates(s).filter(f=>f.eligible).map(f=>f.id)});}
 test('처치 역량이 있어도 이동 범위 제외 기관은 수용 가능으로 표시하지 않음',()=>{
  const s=ready(),f=M.candidates(s).find(x=>x.id==='haeon');assert.equal(f.iv,true);assert.equal(f.eligible,false);assert.equal(U.facilityStatus(f,s).label,'문의 대상 제외');assert.equal(U.facilityStatus(f,s).tone,'neutral');
@@ -24,17 +24,17 @@ test('선택 문의에서 답변을 기다리는 동안 불필요한 역할 전�
  const s=sent();assert.equal(U.nextTask(s,'hospital',{auto:true}).action,null);assert.equal(U.nextTask(s,'patient',{auto:true}).action,null);
 });
 test('수용 불가·추가 정보 요청 시 후보 공개 대신 예외 처리 안내',()=>{
- let s=sent('unavailable');s=M.transition(s,{type:'demoResponses'},'simulation');assert.equal(U.nextTask(s,'hospital',{auto:true}).action,'expand');
+ let s=sent('unavailable');s=M.transition(s,{type:'demoResponses'},'simulation');assert.equal(U.nextTask(s,'hospital',{auto:true}).action,'research');
  s=sent();for(const id of s.inquiries)s=M.transition(s,{type:'response',id,status:id==='daon'?'more':'rejected',reason:'기관 확인 필요 (가상)'},'facility');const task=U.nextTask(s,'hospital',{auto:true});assert.equal(task.action,'more-info');assert.equal(task.id,'daon');
 });
 test('문의 없는 기관에는 응답 제출 대신 문의 대상 이동 안내',()=>{
  assert.equal(U.nextTask(sent(),'facility',{facility:'bom'}).action,'go-facility');
 });
 test('환자 비교와 기관 선택은 환자 역할에서 수행',()=>{
- let s=sent();s=M.transition(s,{type:'demoResponses'},'simulation');s=M.transition(s,{type:'publish'});
+ let s=sent();s=M.transition(s,{type:'demoResponses'},'simulation');s=M.transition(s,{type:'publish',pendingChoice:'close'});
  assert.equal(U.nextTask(s,'hospital').action,'request-handoff');assert.equal(U.nextTask(s,'patient',{compareCount:1}).action,'focus-candidates');assert.equal(U.nextTask(s,'patient',{compareCount:2}).action,'open-compare');
  s=M.transition(s,{type:'choose',id:'saebom',consent:true},'patient');assert.equal(U.nextTask(s,'hospital').action,'focus-prep');for(const key of Object.keys(s.prep))s=M.transition(s,{type:'prep',key,value:true});assert.equal(U.nextTask(s,'hospital').action,'handoff');
- s=M.transition(s,{type:'handoff'});assert.equal(U.nextTask(s,'facility',{facility:'solbit'}).action,'go-facility');assert.equal(U.nextTask(s,'facility',{facility:'saebom'}).action,'visit');
+ s=M.transition(s,{type:'handoff'});assert.equal(U.nextTask(s,'facility',{facility:'solbit'}).action,null);assert.equal(U.nextTask(s,'facility',{facility:'saebom'}).action,'visit');
  s=M.transition(s,{type:'visit',id:'saebom',result:'missed',note:'일정 재확인 (가상)'},'facility');assert.equal(U.nextTask(s,'hospital').action,'relink');assert.equal(U.nextTask(s,'patient').action,null);
 });
 
@@ -45,11 +45,11 @@ test('원문 메타데이터나 HTML 문자열을 알려진 임상 항목으로 
 test('회신 강조는 추가 정보·미응답을 수용 가능 또는 불가로 오인하지 않음',()=>{assert.equal(U.responsePresentation('accepted').tone,'green');assert.equal(U.responsePresentation('rejected').tone,'red');for(const state of ['more','timeout']){assert.equal(U.responsePresentation(state).tone,'amber');assert.notEqual(U.responsePresentation(state).label,'수용 가능');}assert.equal(U.responsePresentation('pending').tone,'pending');});
 
 test('방문 안내가 필요한 새 회송은 체크 완료 여부와 관계없이 일정을 먼저 안내',()=>{
- let s=sent();s=M.transition(s,{type:'demoResponses'},'simulation');s=M.transition(s,{type:'publish'});s=M.transition(s,{type:'choose',id:'saebom',consent:true},'patient');s.requiresSchedule=true;
+ let s=sent();s=M.transition(s,{type:'demoResponses'},'simulation');s=M.transition(s,{type:'publish',pendingChoice:'close'});s=M.transition(s,{type:'choose',id:'saebom',consent:true},'patient');s.requiresSchedule=true;
  for(const key of Object.keys(s.prep))s.prep[key]=true;
  assert.equal(U.nextTask(s,'hospital').action,'focus-plan');
  s.transferPlan={confirmed:true};s.prep.transport=false;s.prep.guidance=false;
- const task=U.nextTask(s,'hospital');assert.equal(task.action,'focus-prep');assert.match(task.title,/2개/);assert.match(task.description,/이동·입원/);
+ const task=U.nextTask(s,'hospital');assert.equal(task.action,'focus-prep');assert.match(task.title,/2개/);assert.match(task.description,/이동 수단·동행자/);
  s.prep.transport=true;s.prep.guidance=true;assert.equal(U.nextTask(s,'hospital').action,'handoff');
 });
 test('요청 링크 복사와 실제 상대 응답을 구분하고 이전 문의 복사 기록을 재사용하지 않음',()=>{

@@ -47,4 +47,4 @@ Gemini가 계산된 점수 순서를 임의로 바꾸도록 구현하지 않은 
 ## 연결 방식의 공식 문서
 
 - Google. [Gemini OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai). 기존 서버의 호환 REST API를 그대로 사용한다.
-- Vercel. [Vercel Functions](https://vercel.com/docs/functions). 기존 Node.js 서버 함수에 `/api/agent`, `/api/facility`를 추가했다. 서버는 의료정보를 영속 저장하지 않는다.
+- Vercel. [Vercel Functions](https://vercel.com/docs/functions). 기존 Node.js 서버 함수에 `/api/agent`, `/api/facility`를 추가했다. 공유 회송의 합성 환자 기본정보·문의·회신·동의·처리 이력은 SQL 저장소에 보존한다.

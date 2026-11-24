@@ -6,7 +6,7 @@ import {patientFromRegister,patientSnapshot} from './patients.mjs';
 export const hashToken=t=>createHash('sha256').update(t).digest('hex');
 const uuid=s=>typeof s==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s);
 const token=s=>typeof s==='string'&&/^[A-Za-z0-9_-]{43}$/.test(s);
-const allow={hospital:['requestDetails','attest','source','parse','applyExtraction','supplement','ready','provideInfo','expand','prep','handoff','ack','relink','transferPlan','handoffRequest','send','publish'],patient:['customPreferences','profile','preferences','consent','choose','rejectCandidates'],facility:['facilityUpdate','response','visit']};
+const allow={hospital:['clinicalReview','intakeDetails','consultation','research','requestDetails','attest','source','parse','applyExtraction','supplement','ready','provideInfo','expand','prep','handoff','ack','relink','transferPlan','handoffRequest','send','publish'],patient:['customPreferences','profile','preferences','consent','choose','rejectCandidates'],facility:['facilityContact','facilityUpdate','response','visit']};
 function credentialsFor(M,owner){return Object.fromEntries(['hospital','patient',...M.facilities.map(f=>'facility/'+f.id)].map(key=>[key,key==='hospital'?owner:createHmac('sha256',owner).update(key).digest('base64url')]));}
 export function projectState(M,state,grant){
  const s=structuredClone(state);
@@ -14,6 +14,8 @@ export function projectState(M,state,grant){
  if(grant.role==='facility'){
   const own=grant.facility,shared=s.selected===own&&s.shareConsent;
   s.responses=s.responses[own]?{[own]:s.responses[own]}:{};s.inquiries=s.inquiries.includes(own)?[own]:[];
+  s.roundHistory=[];s.responseHistory=(s.responseHistory||[]).filter(x=>x.id===own);s.fieldHistory=[];s.consultation=null;s.clinicalReview=null;
+  s.unresolvedFields=M.unresolved(state).map(k=>M.fields[k]);
   s.events=[];s.agentRuns=[];s.lastAgent=null;s.extraction=null;
   s.inquiryNotes=s.inquiryNotes[own]?{[own]:s.inquiryNotes[own]}:{};s.inquiryRequests=s.inquiryRequests?.[own]?{[own]:s.inquiryRequests[own]}:{};
   s.facilityUpdates=s.facilityUpdates[own]?{[own]:s.facilityUpdates[own]}:{};
@@ -83,12 +85,12 @@ export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agen
       const replies=await Promise.all(pending.map(async f=>{const r=await facility(new Request(url.origin+'/api/facility',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:M.facilityRequest(next,f)})}));if(!r.ok)throw Error('기관 응답을 확인하지 못했습니다.');return (await r.json()).receipt;}));
       for(const receipt of replies)next=M.transition(next,{type:'receipt',receipt},'simulation');
      }
-     if(body.basic===true){next.automationMode='basic';next.lastAgent=null;if(M.accepted(next).length)next=M.transition(next,{type:'publish'},'hospital');}
+     if(body.basic===true){next.automationMode='basic';next.lastAgent=null;if(M.accepted(next).length&&next.inquiries.every(id=>next.responses[id]&&next.responses[id].status!=='more'))next=M.transition(next,{type:'publish'},'hospital');}
      else{
      const r=await agent(new Request(url.origin+'/api/agent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:next})})),a=await r.json();
      if(!r.ok)return json({error:a.error||'회신 분석을 다시 시도해 주세요.'},503);
      next=M.transition(next,{type:'recordAgent',result:a},'hospital');
-     if(a.nextAction==='present_candidates'&&M.accepted(next).length)next=M.transition(next,{type:'publish'},'hospital');
+     if(a.nextAction==='present_candidates'&&M.accepted(next).length&&next.inquiries.every(id=>next.responses[id]&&next.responses[id].status!=='more'))next=M.transition(next,{type:'publish'},'hospital');
      }
      const saved=await db.commit(row,next,body.requestId);return saved?response(saved,row):response(await db.read(id,hashToken(key)),row,{conflict:true});
     }finally{await db.release(id,lease);}
@@ -96,7 +98,7 @@ export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agen
    if(body.operation!=='transition'||!allow[row.role].includes(body.action?.type))return json({error:'이 화면에서 처리할 수 없는 작업입니다.'},403);
    if(row.state.requiresPatient&&!row.state.patientRecord&&['attest','parse','applyExtraction','ready'].includes(body.action.type))return json({error:'먼저 환자를 검색하거나 등록해 회송 대상자를 확인해 주세요.'},422);
    if(row.role==='facility'&&body.action.id!==row.facility)return json({error:'해당 기관의 작업만 처리할 수 있습니다.'},403);
-   const next=M.transition(row.state,body.action,row.role),profileUpdate=body.action.type==='facilityUpdate'?{id:row.facility,body:next.facilityUpdates[row.facility]}:null,saved=await db.commit(row,next,body.requestId,profileUpdate);
+   const next=M.transition(row.state,body.action,row.role),profileUpdate=['facilityUpdate','facilityContact'].includes(body.action.type)?{id:row.facility,body:next.facilityUpdates[row.facility]}:null,saved=await db.commit(row,next,body.requestId,profileUpdate);
    return saved?response(saved,row):response(await db.read(id,hashToken(key)),row,{conflict:true});
   }catch(e){
    if(e instanceof SyntaxError)return json({error:'요청 형식을 확인해 주세요.'},400);

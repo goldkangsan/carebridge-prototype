@@ -187,3 +187,11 @@ body:not([data-workspace="patient"]) .staff-facility.staff-row{display:block;bor
 .inquiry-table td small, .inquiry-table th small { display: block; margin-top: 4px; color: var(--muted); }
 .inquiry-table td:nth-child(3) { min-width: 145px; overflow-wrap: anywhere; }
 .inquiry-table td:last-child { white-space: nowrap; }
+
+.form-hint { margin: 8px 0; color: var(--amber); font-size: 12px; }
+.previous-inquiry { color: var(--amber); }
+.change-history { margin: 14px 0; border-top: 1px solid var(--line); padding-top: 12px; font-size: 13px; }
+.change-history p { margin: 6px 0; overflow-wrap: anywhere; }
+.clinical-review .field { max-width: 360px; }
+
+#decline-code-field[hidden], #consult-authority[hidden] { display: none !important; }
