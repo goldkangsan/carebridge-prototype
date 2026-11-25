@@ -108,3 +108,13 @@ test('분석 중 다른 화면이 회신하면 오래된 분석을 저장하지 
  const analysis=slowApi(new Request('https://demo.test/api/cases?id='+c.id,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.credentials.hospital},body:JSON.stringify({operation:'assist',revision:c.revision,requestId:randomUUID()})}));await started;
  await act(c,'facility/saebom',{type:'response',id:'saebom',status:'accepted'});finish();const response=await(await analysis).json();assert.equal(response.conflict,true);assert.equal(response.state.responses.saebom.status,'accepted');assert.equal(response.state.assistance,undefined);
 });
+
+
+test('AI 분석만 갱신된 경우 기관 회신 입력은 유지하며 해당 기관의 실제 회신 변경은 충돌로 보호',async()=>{
+ const c=await create();await ready(c);await act(c,'patient',{type:'consent',value:true});await act(c,'hospital',{type:'send',ids:['saebom']});
+ const old=await read(c,'facility/saebom'),viewKey=M.assistanceKey(old.state);await post(c,'hospital',{operation:'assist'});
+ const accepted=await post(c,'facility/saebom',{operation:'transition',revision:old.revision,viewKey,action:{type:'response',id:'saebom',status:'accepted',reason:'수용 가능'}});
+ assert.equal(accepted.status,200);assert.ok(!accepted.conflict);assert.equal(accepted.state.responses.saebom.status,'accepted');
+ const conflict=await post(c,'facility/saebom',{operation:'transition',revision:old.revision,viewKey,action:{type:'response',id:'saebom',status:'rejected',reason:'과거 화면의 변경'}});
+ assert.equal(conflict.conflict,true);assert.equal(conflict.state.responses.saebom.status,'accepted');
+});

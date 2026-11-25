@@ -60,7 +60,8 @@ export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agen
    if(request.method==='GET')return response(row,row);
    if(!uuid(body.requestId)||!Number.isInteger(body.revision)||body.revision<0)return json({error:'요청 정보를 확인해 주세요.'},400);
    if(await db.replay(id,body.requestId))return response(row,row,{replayed:true});
-   if(row.revision!==body.revision)return response(row,row,{conflict:true});
+   const sameFacilityView=row.role==='facility'&&body.operation==='transition'&&['response','visit'].includes(body.action?.type)&&body.viewKey===M.assistanceKey(projectState(M,row.state,row));
+   if(row.revision!==body.revision&&!sameFacilityView)return response(row,row,{conflict:true});
    if(body.operation==='assign-patient'){
     if(row.role!=='hospital')return json({error:'의뢰기관에서만 대상 환자를 확인할 수 있습니다.'},403);
     if(row.state.stage!==0||row.state.parsed||row.state.doctorApproved)return json({error:'회송 정보 확인 이후에는 대상 환자를 바꿀 수 없습니다. 새 회송 건을 만들어 주세요.'},422);

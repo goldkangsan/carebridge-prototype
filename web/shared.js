@@ -11,11 +11,11 @@
  function pathHref(path){if(!session)return path;const a=access(path);return a?path+fragment(session.id,a):null;}
  async function request(body,path=location.pathname){
   const current=session,a=access(path);if(!session||!a)throw Error('이 화면의 이용 링크가 필요합니다.');
-  const r=await fetch('/api/cases?id='+encodeURIComponent(session.id),{method:body?'POST':'GET',headers:{Authorization:'Bearer '+a,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify({...body,revision:session.revision,requestId:crypto.randomUUID()})}:{}),signal:AbortSignal.timeout(['advance','assist'].includes(body?.operation)?29000:12000)});
+  const r=await fetch('/api/cases?id='+encodeURIComponent(session.id),{method:body?'POST':'GET',headers:{Authorization:'Bearer '+a,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify({...body,viewKey:session.viewKey,revision:session.revision,requestId:crypto.randomUUID()})}:{}),signal:AbortSignal.timeout(['advance','assist'].includes(body?.operation)?29000:12000)});
   const data=await r.json();if(!r.ok)throw Error(data.error||'공유 기록을 불러오지 못했습니다.');
   if(session!==current||data.revision<session.revision)return {...data,stale:true};
   if(data.credentials)Object.assign(session.credentials,data.credentials);
-  session.revision=data.revision;session.profileRevision=data.profileRevision||'';session.access=a;session.role=data.role;session.facility=data.facility;session.caseId=data.state.caseId;session.stage=data.state.stage;remember();return data;
+  session.viewKey=root.CareBridge.assistanceKey(data.state);session.revision=data.revision;session.profileRevision=data.profileRevision||'';session.access=a;session.role=data.role;session.facility=data.facility;session.caseId=data.state.caseId;session.stage=data.state.stage;remember();return data;
  }
  async function init(){
   if(location.protocol==='file:')return null;
@@ -23,7 +23,7 @@
   if(q){const owner=read(BOOK,[]).find(x=>x.id===q.id)||saved?.id===q.id&&saved;session={id:q.id,access:q.access,revision:0,credentials:owner?.credentials||{}};
    const r=await fetch('/api/cases?id='+encodeURIComponent(q.id),{headers:{Authorization:'Bearer '+q.access},signal:AbortSignal.timeout(12000)}),data=await r.json();if(!r.ok){session=null;throw Error(data.error||'이용 링크를 확인해 주세요.');}
    if(data.credentials)Object.assign(session.credentials,data.credentials);
-   const key=data.role==='facility'?'facility/'+data.facility:data.role;session.credentials[key]=q.access;session.role=data.role;session.facility=data.facility;session.revision=data.revision;session.profileRevision=data.profileRevision||'';session.caseId=data.state.caseId;session.stage=data.state.stage;remember();
+   const key=data.role==='facility'?'facility/'+data.facility:data.role;session.credentials[key]=q.access;session.role=data.role;session.facility=data.facility;session.viewKey=root.CareBridge.assistanceKey(data.state);session.revision=data.revision;session.profileRevision=data.profileRevision||'';session.caseId=data.state.caseId;session.stage=data.state.stage;remember();
    const expected=keyFor(location.pathname);if(expected&&expected!==key&&!session.credentials[expected])throw Error('이 링크로는 요청한 화면을 이용할 수 없습니다.');
    if(expected&&expected!==key)return request();return data;
   }
