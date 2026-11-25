@@ -5,13 +5,15 @@ import {PGlite} from '@electric-sql/pglite';
 import M from '../web/model.js';
 import {createStore} from '../worker/database.mjs';
 import {createCasesApi} from '../worker/cases.mjs';
+import {assistanceContext,validateAssistance} from '../worker/assistance.mjs';
 
 let pg,store,api;
 before(async()=>{
  pg=new PGlite();store=createStore({query:async(q,p)=>{const r=await pg.query(q,p);return r.rows;},batch:async qs=>pg.transaction(async tx=>{for(const q of qs)await tx.exec(q);})});
  await store.init();
  const agent=async r=>{const {state:s}=await r.json();return new Response(JSON.stringify({mode:'live',nextAction:M.agentAction(s),actionLabel:'검증용 자동 처리',recommendations:M.candidates(s).filter(f=>f.eligible).map(f=>({id:f.id})),inquiryDraft:['treatment','period','isolation'].map(k=>M.fields[k]+': '+s.data[k]).join('\n'),at:new Date().toISOString(),model:'test-only'}));};
- api=createCasesApi(M,{store,configured:()=>true,agent});
+ const assist=async s=>{const c=assistanceContext(M,s);return {...validateAssistance(c,{action:c.action,recommendations:c.ranked.map(f=>({id:f.id,reasonCodes:['treatment','distance']})),interpretations:c.responses.map(r=>({id:r.id,status:r.status,quote:r.text,focusCode:r.focusCodes[0]})),checkIds:c.checks.map(x=>x.id),draft:c.stage===1?'수용 문의\n'+c.requiredLines.join('\n')+'\n수용 가능 여부를 회신해 주세요.':''}),mode:'live',at:new Date().toISOString(),model:'test-only'};};
+ api=createCasesApi(M,{store,configured:()=>true,agent,assist});
 });
 after(async()=>pg.close());
 async function create(){const r=await api(new Request('https://demo.test/api/cases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation:'create',scenario:'normal'})}));assert.equal(r.status,200);return r.json();}
@@ -84,3 +86,25 @@ test('담당자가 고른 기관에만 문의가 생성되고 자동 진행이 �
 });
 test('자동 진행을 끈 공유 회송에서 수동 문의·기관 응답·후보 안내가 서버 권한과 일치',async()=>{const c=await create();await ready(c);await act(c,'patient',{type:'consent',value:true});assert.equal((await act(c,'hospital',{type:'send',ids:['saebom','solbit','daon']})).state.stage,2);await act(c,'facility/saebom',{type:'response',id:'saebom',status:'accepted',reason:'조건 확인'});assert.equal((await act(c,'hospital',{type:'publish',pendingChoice:'close'})).state.stage,3);});
 test('발표자용 무응답·모의 응답은 의뢰기관만 현재 문의 단계에 기록',async()=>{const c=await create();assert.equal((await post(c,'hospital',{operation:'simulate',action:{type:'demoResponses'}})).status,422);await ready(c);await act(c,'patient',{type:'consent',value:true});await act(c,'hospital',{type:'send',ids:['saebom','solbit','daon']});assert.equal((await post(c,'patient',{operation:'simulate',action:{type:'timeout',id:'saebom'}})).status,403);assert.equal((await post(c,'facility/saebom',{operation:'simulate',action:{type:'demoResponses'}})).status,403);const timed=await post(c,'hospital',{operation:'simulate',action:{type:'timeout',id:'saebom'}});assert.equal(timed.state.responses.saebom.status,'timeout');assert.equal(timed.state.events[0].actor,'simulation');const rest=await post(c,'hospital',{operation:'simulate',action:{type:'demoResponses'}});assert.equal(rest.status,200);assert.equal(rest.state.responses.saebom.status,'timeout');assert.equal(rest.state.responses.solbit.status,'accepted');});
+
+
+test('DB AI 분석은 의뢰기관만 요청하고 초안·회신 근거를 저장하며 상태와 기관 응답을 바꾸지 않음',async()=>{
+ const c=await create();await ready(c);
+ assert.equal((await post(c,'hospital',{operation:'assist'})).status,422);
+ await act(c,'patient',{type:'consent',value:true});
+ assert.equal((await post(c,'patient',{operation:'assist'})).status,403);
+ let r=await post(c,'hospital',{operation:'assist'});assert.equal(r.status,200);assert.equal(r.state.stage,1);assert.deepEqual(r.state.inquiries,[]);assert.ok(r.state.assistance.draft);
+ const revision=r.revision;r=await post(c,'hospital',{operation:'assist'});assert.equal(r.revision,revision);
+ const declined=await post(c,'hospital',{operation:'transition',action:{type:'send',ids:['saebom','daon']}});assert.equal(declined.status,422);
+ await act(c,'hospital',{type:'send',ids:['saebom','daon'],draftConfirmed:true});
+ await act(c,'facility/daon',{type:'response',id:'daon',status:'more',reason:'산소 공급량 확인 필요'});
+ const before=await read(c);r=await post(c,'hospital',{operation:'assist'});assert.equal(r.status,200);assert.equal(r.state.stage,2);assert.deepEqual(r.state.responses,before.state.responses);assert.equal(r.state.assistance.interpretations[0].quote,'산소 공급량 확인 필요');assert.equal(r.state.assistanceRuns.length,2);
+ const receiver=await read(c,'facility/daon');assert.equal(receiver.state.assistance,null);assert.deepEqual(receiver.state.assistanceRuns,[]);assert.ok(receiver.state.inquiryDraft.includes('필요 처치:'));assert.ok(!receiver.state.inquiryDraft.includes('가상약'));assert.equal(receiver.state.sentInquiryDraft,'');
+});
+test('분석 중 다른 화면이 회신하면 오래된 분석을 저장하지 않고 최신 기록을 반환',async()=>{
+ const c=await create();await ready(c);await act(c,'patient',{type:'consent',value:true});await act(c,'hospital',{type:'send',ids:['saebom']});
+ let entered,finish;const started=new Promise(r=>entered=r),gate=new Promise(r=>finish=r);
+ const slowApi=createCasesApi(M,{store,configured:()=>true,assist:async s=>{entered();await gate;return {mode:'live',action:M.assistanceAction(s),actionText:'확인',at:new Date().toISOString(),recommendations:[],interpretations:[],checks:[],draft:''};}});
+ const analysis=slowApi(new Request('https://demo.test/api/cases?id='+c.id,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+c.credentials.hospital},body:JSON.stringify({operation:'assist',revision:c.revision,requestId:randomUUID()})}));await started;
+ await act(c,'facility/saebom',{type:'response',id:'saebom',status:'accepted'});finish();const response=await(await analysis).json();assert.equal(response.conflict,true);assert.equal(response.state.responses.saebom.status,'accepted');assert.equal(response.state.assistance,undefined);
+});

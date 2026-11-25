@@ -1,6 +1,7 @@
 import {randomUUID,randomBytes,createHash,createHmac} from 'node:crypto';
 import {databaseConfigured,getDatabase} from './database.mjs';
 import {createAgentApi,createFacilityApi} from './agents.mjs';
+import {createAssistance} from './assistance.mjs';
 import {patientFromRegister,patientSnapshot} from './patients.mjs';
 
 export const hashToken=t=>createHash('sha256').update(t).digest('hex');
@@ -16,14 +17,14 @@ export function projectState(M,state,grant){
   s.responses=s.responses[own]?{[own]:s.responses[own]}:{};s.inquiries=s.inquiries.includes(own)?[own]:[];
   s.roundHistory=[];s.responseHistory=(s.responseHistory||[]).filter(x=>x.id===own);s.fieldHistory=[];s.consultation=null;s.clinicalReview=null;
   s.unresolvedFields=M.unresolved(state).map(k=>M.fields[k]);
-  s.events=[];s.agentRuns=[];s.lastAgent=null;s.extraction=null;
+  s.events=[];s.agentRuns=[];s.lastAgent=null;s.extraction=null;s.assistance=null;s.assistanceRuns=[];s.sentInquiryDraft='';
   s.inquiryNotes=s.inquiryNotes[own]?{[own]:s.inquiryNotes[own]}:{};s.inquiryRequests=s.inquiryRequests?.[own]?{[own]:s.inquiryRequests[own]}:{};
   s.facilityUpdates=s.facilityUpdates[own]?{[own]:s.facilityUpdates[own]}:{};
-  if(!shared){s.patient='비식별 의뢰 대상자';delete s.patientRecord;s.data=Object.fromEntries(['treatment','period','isolation'].map(k=>[k,s.data[k]||'']));s.transferPlan=null;s.source=Object.entries(s.data).map(([k,v])=>M.fields[k]+': '+v).join('\n');s.inquiryDraft='';s.visit=null;}
+  if(!shared){s.patient='비식별 의뢰 대상자';delete s.patientRecord;s.data=Object.fromEntries(['treatment','period','isolation'].map(k=>[k,s.data[k]||'']));s.transferPlan=null;s.source=Object.entries(s.data).map(([k,v])=>M.fields[k]+': '+v).join('\n');s.inquiryDraft=s.inquiries.includes(own)?state.sentInquiryDraft||'':'';s.visit=null;}
  }
  return s;
 }
-export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agent=createAgentApi(M),facility=createFacilityApi(M)}={}){
+export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agent=createAgentApi(M),facility=createFacilityApi(M),assist=createAssistance(M)}={}){
  const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store','Referrer-Policy':'no-referrer'}});
  const response=(row,grant,extra={})=>json({id:row.id,revision:row.revision,profileRevision:row.profileRevision||'',updatedAt:row.updated_at||null,state:projectState(M,row.state,grant),role:grant.role,facility:grant.facility||null,synthetic:true,...(grant.role==='hospital'&&grant.rawAccess&&row.state.accessVersion===2?{credentials:credentialsFor(M,grant.rawAccess)}:{}),...extra});
  return async request=>{
@@ -72,6 +73,22 @@ export function createCasesApi(M,{store,configured=()=>databaseConfigured(),agen
     if(row.role!=='hospital'||!['demoResponses','timeout'].includes(body.action?.type))return json({error:'발표자용 모의 처리는 의뢰기관에서만 실행할 수 있습니다.'},403);
     const next=M.transition(row.state,body.action,'simulation'),saved=await db.commit(row,next,body.requestId);
     return saved?response(saved,row):response(await db.read(id,hashToken(key)),row,{conflict:true});
+   }
+   if(body.operation==='assist'){
+    if(row.role!=='hospital')return json({error:'AI 분석은 의뢰기관에서 요청해 주세요.'},403);
+    if(!row.state.consent||row.state.stage<1)return json({error:'기관 문의 동의 후 분석할 수 있습니다.'},422);
+    const inputKey=M.assistanceKey(row.state);
+    if(row.state.assistance?.inputKey===inputKey&&body.force!==true)return response(row,row);
+    const lease=randomUUID();if(!await db.claim(id,lease))return response(row,row,{processing:true});
+    try{
+     const result=await assist(row.state),next=structuredClone(row.state);
+     if(result.mode!=='live'||result.action!==M.assistanceAction(next))throw Error('AI 분석 결과를 확인하지 못했습니다.');
+     next.assistance={...result,inputKey};
+     next.assistanceRuns=[{at:result.at,action:result.action,model:result.model,round:next.round},...(next.assistanceRuns||[])].slice(0,20);
+     next.events.unshift({type:'assistance',actor:'hospital',detail:'AI 후보 근거·문의 초안·회신 분석 확인 · '+result.actionText,time:new Date().toISOString()});
+     const saved=await db.commit(row,next,body.requestId);return saved?response(saved,row):response(await db.read(id,hashToken(key)),row,{conflict:true});
+    }catch{return json({error:'AI 분석을 완료하지 못했습니다. 기존 기록은 유지됩니다. 다시 분석하거나 업무를 계속해 주세요.',code:'ASSISTANCE_UNAVAILABLE'},503);}
+    finally{await db.release(id,lease);}
    }
    if(body.operation==='advance'){
     if(row.role==='facility')return json({error:'수용기관은 직접 회신해 주세요.'},403);

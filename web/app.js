@@ -6,6 +6,7 @@
   let patientRows=null,patientQuery='',patientDetail=null,patientsLoading=false,patientsError='',patientSearchId=0;
   let sharedLoading=true,sharedError='',sourceDirty=false;
   let agentError='',basicMode=false,sourceEditMode=false;
+  let assistanceWorking=false,assistanceError='',assistanceAttempt='',draftReviewedKey='';
   const roles={hospital:'의뢰기관',patient:'환자·보호자',facility:'수용기관',simulation:'자동 처리'};
   const initialRoute=R.parse(routeLocation());
   let state=M.initial(),role=initialRoute.role||'hospital',view=initialRoute.view,facility=initialRoute.facility||'saebom',compare=new Set(),toastTimer,consentDraft=false;
@@ -81,6 +82,43 @@
       if(epoch!==generation)return false;const stageChanged=state.stage!==next.stage;state=next;save();working=false;render();if(stageChanged){$('.page-heading')?.scrollIntoView({block:'start',behavior:'smooth'});$('#task-title')?.focus({preventScroll:true});}queueMicrotask(kickAutomation);return true;
     }catch(e){if(epoch===generation){state.metrics.errors++;save();toast(e.name==='AbortError'?'처리 시간이 초과되었습니다. 진행 상태는 유지했습니다.':e.message||'작업을 완료하지 못했습니다.',true);}return false;}
     finally{setBusy(false);}
+  }
+  const currentAssistance=()=>state.assistance?.inputKey===M.assistanceKey(state)?state.assistance:null;
+  function assistanceBasis(id){const r=currentAssistance()?.recommendations.find(r=>r.id===id);return r?`<span class="ai-caption">AI가 정리한 비교 근거</span><ul>${r.basis.map(x=>`<li>${displayFact(x)}</li>`).join('')}</ul>`:'';}
+  function draftReview(){
+    const a=currentAssistance(),draft=a?.draft||M.inquiryTemplate(state),key=M.assistanceKey(state)+(a?.draft||'basic');
+    return `<div class="ai-draft-review" id="ai-draft-review"><h3>${a?.draft?'AI가 작성한 문의 초안':'기관에 전달할 문의 요약'}</h3><div class="inquiry-highlight">${highlightedText(draft,true)}</div><label class="check"><input id="draft-confirmed" type="checkbox" ${draftReviewedKey===key?'checked':''}><span>선택한 기관에 전달할 처치 요약과 희망 일정을 확인했습니다.</span></label><p class="tiny">이름·연락처와 상세 처방은 초기 문의에 포함하지 않습니다.</p></div>`;
+  }
+  function assistancePanel(){
+    const a=currentAssistance(),waiting=assistanceWorking;
+    const title=state.stage===1?'AI 후보 검토':state.stage<=3?'AI 회신 요약·다음 작업':'AI 진행 점검';
+    const steps=['회송서 정리','조건 비교','문의 초안','회신 분석','결과 재확인'];
+    return `<section class="panel ai-assistance" aria-label="${title}"><div class="panel-head"><h2>${title}</h2>${badge(waiting?'분석 중':a?'분석 완료':'분석 대기',waiting?'amber':a?'green':'')}</div><ol class="ai-workflow" aria-label="AI 지원 과정">${steps.map((text,i)=>`<li class="${i===0&&state.extraction||i===1&&a||i===2&&(a?.draft||state.sentInquiryDraft)||i===3&&a?.interpretations.length||i===4&&a&&(state.round>1||state.stage>=6)?'checked':''}">${text}</li>`).join('')}</ol>
+      ${waiting?'<p role="status" class="ai-status">현재 조건과 기관 회신을 정리하고 있습니다. 문의 대상과 회신 상태는 바꾸지 않습니다.</p>':assistanceError?`<p class="notice amber" role="alert">${esc(assistanceError)} 기존 기관 선택·회신 확인은 계속할 수 있습니다.</p>`:!a?'<p class="tiny">기관 조건과 회신의 근거를 확인해 보여줍니다.</p>':''}
+      ${a?`<p class="ai-next"><span>다음 확인</span><strong>${esc(a.actionText)}</strong></p>${a.checks.length?`<details class="ai-checks"><summary>추가 확인 ${a.checks.length}건</summary><ul>${a.checks.map(c=>`<li>${esc(c.text)}</li>`).join('')}</ul></details>`:''}${a.interpretations.length?`<div class="ai-reply-list">${a.interpretations.map(r=>`<article class="reply-card reply-${U.responsePresentation(r.status).tone}"><div class="reply-card-head"><h3>${esc(M.facilities.find(f=>f.id===r.id).name)}</h3>${statusBadge(U.responsePresentation(r.status))}</div><p class="ai-quote">“${replyQuote(r.quote,r.status)}”</p><p class="tiny">${esc(r.focus)}${r.offerWhen?' · 제안 일정 '+esc(r.offerWhen.replace('T',' ')):''}</p></article>`).join('')}</div>`:''}<p class="tiny">${when(a.at)} 분석${a.cached?' · 동일 조건의 검증 결과 재사용':''} · 회신 원문과 등록 조건을 기준으로 정리했습니다.</p>`:''}
+      <div class="row">${button(waiting?'AI 분석 중…':a?'다시 분석':'AI 분석 다시 시도','assist-refresh','small',waiting?'disabled':'')}${a?button('AI 처리 근거 보기','assist-detail','small'):''}</div></section>`;
+  }
+  function paintAssistance(){
+    const panel=$('.ai-assistance');if(panel)panel.outerHTML=assistancePanel();
+    for(const el of document.querySelectorAll('[data-ai-basis]'))el.innerHTML=assistanceBasis(el.dataset.aiBasis);
+    if($('#ai-draft-review'))$('#ai-draft-review').outerHTML=draftReview();
+    updateFormReadiness();
+  }
+  async function refreshAssistance(force=false){
+    if(!S.active||role!=='hospital'||view!=='case'||sharedLoading||sharedError||working||assistanceWorking||!apiChecked||!aiAvailable||!state.consent||state.stage<1)return;
+    const inputKey=M.assistanceKey(state),scope=state.caseId+inputKey;
+    if(!force&&(currentAssistance()||assistanceAttempt===scope))return;
+    assistanceAttempt=scope;assistanceWorking=true;assistanceError='';paintAssistance();
+    try{
+      const result=await S.assist(force);
+      if(result.stale||inputKey!==M.assistanceKey(state)||result.state.assistance?.inputKey!==inputKey)return;
+      state=result.state;save();
+    }catch(e){if(inputKey===M.assistanceKey(state))assistanceError=serviceText(e.message);}
+    finally{assistanceWorking=false;paintAssistance();if(inputKey!==M.assistanceKey(state))queueMicrotask(()=>refreshAssistance());}
+  }
+  function assistanceDetail(){
+    const a=currentAssistance();if(!a)return;
+    modal('AI 처리 근거',`<p>AI는 등록 조건과 기관 회신을 정리합니다. 문의 대상·수용 여부·환자 선택·완료 승인은 각 담당자가 결정합니다.</p><h3>후보별 근거</h3>${a.recommendations.map(r=>`<section class="agent-evidence"><h3>${esc(M.facilities.find(f=>f.id===r.id).name)} · 조건 점수 ${r.score}</h3><ul>${r.basis.map(x=>`<li>${displayFact(x)}</li>`).join('')}</ul></section>`).join('')||'<p>현재 조건에서 비교할 후보가 없습니다.</p>'}${a.excluded?.length?`<h3>제외 사유</h3><ul>${a.excluded.map(x=>`<li>${esc(M.facilities.find(f=>f.id===x.id).name)} · ${esc(x.reasons.join(' · '))}</li>`).join('')}</ul>`:''}<h3>최근 AI 작업 기록</h3><ol>${(state.assistanceRuns||[]).map(x=>`<li>${when(x.at)} · ${esc(x.action===a.action?a.actionText:'해당 단계의 후보·회신 근거 확인')}</li>`).join('')}</ol>`,button('닫기','close'));
   }
   async function runAgent(){
     if(S.active)return sharedAdvance();
@@ -298,14 +336,19 @@
   function clinicalPanel(){
     const missing=M.missing(state),unresolved=M.unresolved(state),count=missing.length+unresolved.length;
     const label=state.parsed?(count?'확인 필요 '+count+'건':'기재 항목 확인됨'):'구조화 전';
+    const rows=Object.entries(M.fields).map(([k,v])=>{
+      const value=missing.includes(k)?'<span class="missing-text">미기재 · 보완 필요</span>':unresolved.includes(k)?`<span class="badge amber">미확정</span> ${displayFact(state.data[k])}`:displayFact(state.data[k]);
+      const original=state.source.split('\n').find(line=>line.startsWith(v+':'))||'원문 미기재';
+      return [v,value+(state.extraction?`<details class="source-evidence"><summary>원문 근거</summary><p>${esc(original)}</p>${state.data[k]!==M.extract(state.source)[k]?'<p>담당자가 보완한 값입니다.</p>':''}</details>`:'')];
+    });
     return `<section class="panel"><div class="panel-head"><h2>구조화된 회송 정보</h2>${badge(label,count?'amber':'green')}</div>
-      ${state.extraction?`<p class="notice ${count?'amber':'green'}">AI 분석 완료 · ${count?'확인 필요 '+count+'건':'원문 대조 완료'}</p>`:''}
-      ${state.parsed?dl(Object.entries(M.fields).map(([k,v])=>[v,missing.includes(k)?'<span class="missing-text">미기재 · 보완 필요</span>':unresolved.includes(k)?`<span class="badge amber">미확정</span> ${displayFact(state.data[k])}`:displayFact(state.data[k])])):'<p>회송서의 기재 항목과 누락을 확인합니다.</p>'}</section>`;
+      ${state.extraction?`<p class="notice ${count?'amber':'green'}">AI 분석 완료 · ${count?'확인 필요 '+count+'건':'원문 대조 완료'}</p>`:state.parsed?'<p class="tiny">기본 항목 점검 결과 · AI 분석 결과가 아닙니다.</p>':''}
+      ${state.parsed?dl(rows):'<p>회송서의 기재 항목과 누락을 확인합니다.</p>'}</section>`;
   }
   function facilityCard(f,patient=false){
     const status=statusBadge(U.facilityStatus(f,state)),extra=state.lastAgent?.recommendations?.find(r=>r.id===f.id);
     if(!patient)return `<article class="facility staff-facility staff-row ${!f.eligible?'excluded':''}">${photo(f,true)}<div class="facility-main"><div class="facility-title"><div><h3>${esc(f.name)}</h3><span class="type">${facilityType(f)} · ${esc(f.area)}</span></div><div class="response-context"><span class="fact-caption">이번 문의에 대한 기관 회신</span>${status}</div></div><div class="staff-facts"><span><small class="fact-caption">등록된 처치 역량</small>${capability('정맥 투여',f.iv)}</span><span>이동${f.estimatedTravel?' (추정)':''} <b>${f.minutes}분</b> · ${f.km}km</span><span>하루 <b>${money(f.cost)}</b></span>${!f.fresh?badge('등록 정보 재확인','amber'):''}</div><p class="response-note">${f.response?.reason?'<b>회신</b> '+displayFact(f.response.reason):!f.eligible?'<b>제외 사유</b> '+esc(f.reasons.join(' · ')):'수용 여부는 기관의 회신으로 확인합니다.'}</p></div><div class="facility-bottom"><span>정보 갱신 ${esc(f.updated)}</span><div class="row">${button('기관 상세','detail','small',`data-id="${f.id}"`)}</div></div></article>`;
-    return `<article class="facility patient-facility choice-column ${compare.has(f.id)?'in-comparison':''}" aria-label="${esc(f.name)} 비교">${photo(f,true)}<div class="facility-main"><div class="facility-title"><div><h3>${esc(f.name)}</h3><div class="type">${facilityType(f)} · ${esc(f.area)}</div></div></div><div class="response-context"><span class="fact-caption">이번 문의에 대한 기관 회신</span>${status}</div><p class="condition-fit">✓ 필요한 처치와 선택한 비용·이동 조건 충족</p><dl class="choice-facts"><div><dt>예상 이동</dt><dd>${f.minutes}<small>분</small></dd></div><div><dt>하루 예상 비용</dt><dd>${money(f.cost)}</dd></div></dl><span class="fact-caption">등록된 처치 역량</span><p class="choice-treatment">${capability('정맥 투여',f.iv)}${state.data.isolation&&state.data.isolation!=='해당 없음'?capability('격리 처치',f.isolation):''}</p><p class="tiny">${f.estimatedTravel?esc(f.travelOrigin)+' 기준 추정':'기준 거리'} ${f.km}km · 상세에서 이동 경로 확인</p>${f.response?.offer?`<div class="offer-summary"><span class="fact-caption">기관이 제안한 방문 일시</span><strong>${esc(f.response.offer.when.replace('T',' '))}</strong><small>선택 후 의뢰기관이 안내를 확인합니다.</small></div>`:''}</div><div class="facility-bottom"><div class="choice-actions">${button('상세 보기','detail','small',`data-id="${f.id}"`)}${M.accepted(state).length>1?button(compare.has(f.id)?'비교에서 빼기':'비교에 담기','compare',compare.has(f.id)?'selected small':'small',`data-id="${f.id}" aria-pressed="${compare.has(f.id)}"`):''}${button('이 기관 선택','choose','primary',`data-id="${f.id}"`)}</div></div></article>`;
+    return `<article class="facility patient-facility choice-column ${compare.has(f.id)?'in-comparison':''}" aria-label="${esc(f.name)} 비교">${photo(f,true)}<div class="facility-main"><div class="facility-title"><div><h3>${esc(f.name)}</h3><div class="type">${facilityType(f)} · ${esc(f.area)}</div></div></div><div class="response-context"><span class="fact-caption">이번 문의에 대한 기관 회신</span>${status}</div><p class="condition-fit">✓ 필요한 처치와 선택한 비용·이동 조건 충족</p><div class="ai-choice-basis" data-ai-basis="${f.id}">${assistanceBasis(f.id)}</div><dl class="choice-facts"><div><dt>예상 이동</dt><dd>${f.minutes}<small>분</small></dd></div><div><dt>하루 예상 비용</dt><dd>${money(f.cost)}</dd></div></dl><span class="fact-caption">등록된 처치 역량</span><p class="choice-treatment">${capability('정맥 투여',f.iv)}${state.data.isolation&&state.data.isolation!=='해당 없음'?capability('격리 처치',f.isolation):''}</p><p class="tiny">${f.estimatedTravel?esc(f.travelOrigin)+' 기준 추정':'기준 거리'} ${f.km}km · 상세에서 이동 경로 확인</p>${f.response?.offer?`<div class="offer-summary"><span class="fact-caption">기관이 제안한 방문 일시</span><strong>${esc(f.response.offer.when.replace('T',' '))}</strong><small>선택 후 의뢰기관이 안내를 확인합니다.</small></div>`:''}</div><div class="facility-bottom"><div class="choice-actions">${button('상세 보기','detail','small',`data-id="${f.id}"`)}${M.accepted(state).length>1?button(compare.has(f.id)?'비교에서 빼기':'비교에 담기','compare',compare.has(f.id)?'selected small':'small',`data-id="${f.id}" aria-pressed="${compare.has(f.id)}"`):''}${button('이 기관 선택','choose','primary',`data-id="${f.id}"`)}</div></div></article>`;
 
   }
 
@@ -337,17 +380,17 @@
   }
   function inquiryPicker(){
     const chosen=selectedInquiryIds(),all=M.candidates(state);
-    const eligible=all.filter(f=>f.eligible).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    const eligible=all.filter(f=>f.eligible);
     const excluded=all.filter(f=>!f.eligible);
     return `<section class="panel inquiry-work" aria-labelledby="inquiry-picker-title">
       <h2 id="inquiry-picker-title">문의할 등록 기관</h2>
       <p class="sub">이번 회송 건의 수용 가능 여부를 확인할 기관을 선택해 주세요.</p>
       ${eligible.length?`<div class="inquiry-choices">${eligible.map(f=>`<label class="check inquiry-choice">
         <input type="checkbox" data-inquiry-id="${f.id}" ${chosen.includes(f.id)?'checked':''}>
-        <span><strong>${esc(f.name)}</strong><small>${facilityType(f)} · ${esc(f.area)} · 예상 이동 ${f.minutes}분</small><small>정맥 투여 ${f.iv?'가능':'불가'} · 격리 ${f.isolation?'가능':'불가'} · 정보 갱신 ${esc(f.updated)}</small>${M.previousInquiry(state,f.id)?`<small class="previous-inquiry">이전 회신 · ${esc(M.previousInquiry(state,f.id).response?.reason||'미회신')}${M.previousInquiry(state,f.id).visit?.result==='missed'?' · 첫 진료 미이행':''}</small>`:''}</span>
+        <span><strong>${esc(f.name)}</strong><small>${facilityType(f)} · ${esc(f.area)} · 예상 이동 ${f.minutes}분</small><small>정맥 투여 ${f.iv?'가능':'불가'} · 격리 ${f.isolation?'가능':'불가'} · 정보 갱신 ${esc(f.updated)}</small><span class="ai-choice-basis" data-ai-basis="${f.id}">${assistanceBasis(f.id)}</span>${M.previousInquiry(state,f.id)?`<small class="previous-inquiry">이전 회신 · ${esc(M.previousInquiry(state,f.id).response?.reason||'미회신')}${M.previousInquiry(state,f.id).visit?.result==='missed'?' · 첫 진료 미이행':''}</small>`:''}</span>
       </label>`).join('')}</div>
       ${eligible.some(f=>M.previousInquiry(state,f.id))?'<label class="check"><input id="confirm-repeat" type="checkbox"><span>같은 조건으로 재문의할 기관의 이전 거절·미이행 기록을 확인했습니다.</span></label>':''}
-      <label class="field"><span>회신 요청 기한 (선택)</span><input id="reply-deadline" type="datetime-local" min="${localNow()}"></label>
+      ${draftReview()}<label class="field"><span>회신 요청 기한 (선택)</span><input id="reply-deadline" type="datetime-local" min="${localNow()}"></label>
       <div class="row space inquiry-actions"><span id="inquiry-selection-count" class="sub" role="status">${chosen.length}곳 선택</span>
         ${button('선택한 기관에 문의','send','primary',chosen.length?'':'disabled')}</div><p class="form-hint" id="inquiry-hint" role="status">${chosen.length?'':'문의할 기관을 선택해 주세요.'}</p>`:'<p class="notice amber">현재 조건에 맞는 기관이 없습니다.</p>'}
       ${excluded.length?`<details><summary>제외된 기관과 사유 · ${excluded.length}곳</summary>
@@ -366,7 +409,7 @@
     return `<section class="panel inquiry-work" aria-labelledby="inquiry-replies-title">
       <div class="row space"><h2 id="inquiry-replies-title">기관별 회신</h2>${badge('문의 '+entries.length+'곳','navy')}</div>
       <div class="row inquiry-counts">${counts}</div>
-      ${state.replyDeadline?`<p class="notice ${Date.parse(state.replyDeadline+'+09:00')<Date.now()?'amber':''}">회신 요청 기한 · ${esc(state.replyDeadline.replace('T',' '))}${Date.parse(state.replyDeadline+'+09:00')<Date.now()?' · 기한이 지나 미회신 기관에 확인이 필요합니다.':''}</p>`:''}
+      ${state.replyDeadline?`<p class="notice ${state.stage===2&&entries.some(f=>!state.responses[f.id])&&Date.parse(state.replyDeadline+'+09:00')<Date.now()?'amber':''}">회신 요청 기한 · ${esc(state.replyDeadline.replace('T',' '))}${state.stage===2&&entries.some(f=>!state.responses[f.id])&&Date.parse(state.replyDeadline+'+09:00')<Date.now()?' · 기한이 지나 미회신 기관에 확인이 필요합니다.':''}</p>`:''}
       ${state.stage===2&&M.accepted(state).length?`<div class="work-actions">${button('수용 확인 후보 안내','publish','primary')}<span class="tiny">미회신·보완 기관이 있으면 제외 여부를 확인합니다.</span></div>`:''}
       ${state.stage===2?button('사유 확인·재문의 조건 조정','research','small'):''}
       <div class="table-scroll" role="region" aria-label="기관별 회신 목록" tabindex="0">
@@ -388,16 +431,16 @@
     let out=pageHead('회송 진행 관리','')+caseSummary()+steps();
     if(state.stage===0&&!state.patientRecord&&S.active)return out+`<section class="panel patient-start"><p class="eyebrow">회송 대상자 확인</p><h2>먼저 환자를 검색하거나 등록해 주세요.</h2><p>이름 또는 병원 등록번호로 환자 정보를 불러온 뒤 회송서를 확인합니다.</p>${button('환자 검색·등록','patients','primary')}</section>`;
     if(state.stage===0){
-      const source=`<section class="panel referral-work"><h2>회송서 확인</h2>${referralDocument()}${checks('attest','담당의가 비응급 전원·회송을 결정했음을 확인했습니다.',state.doctorApproved)}${!state.parsed?`<div class="work-actions">${button(apiChecked?'회송 정보 확인':'분석 준비 중…','review-referral','primary',!apiChecked?'disabled':'')}</div><p class="tiny">기재된 항목을 정리합니다. 문서에 없는 처방은 채우지 않습니다.</p>`:button('회송 정보 다시 확인','review-referral','quiet small')}${aiError?`<div class="notice amber" role="alert">${esc(serviceText(aiError))}<div class="row">${button('분석 다시 시도','review-referral','small')}${button('기본 항목 점검으로 계속','parse','small')}</div></div>`:''}</section>`;
+      const source=`<section class="panel referral-work"><h2>회송서 확인</h2>${referralDocument()}${checks('attest','담당의가 비응급 전원·회송을 결정했음을 확인했습니다.',state.doctorApproved)}${!state.parsed?`<div class="work-actions">${button(apiChecked?(aiAvailable?'AI로 회송 정보 정리':'회송 정보 확인'):'분석 준비 중…','review-referral','primary',!apiChecked?'disabled':'')}</div><p class="tiny">AI가 기재 항목을 정리하고 원문 근거와 확인할 정보를 표시합니다. 문서에 없는 처방은 채우지 않습니다.</p>`:button('회송 정보 다시 확인','review-referral','quiet small')}${aiError?`<div class="notice amber" role="alert">${esc(serviceText(aiError))}<div class="row">${button('분석 다시 시도','review-referral','small')}${button('기본 항목 점검으로 계속','parse','small')}</div></div>`:''}</section>`;
       if(!state.parsed)out+=`<div class="focus-work">${source}</div>`;
       else out+=`<div class="focus-work">${clinicalPanel()}${clinicalReviewPanel()}${intakeForm()}${state.requiresCoordination?requestForm():''}${M.missing(state).length?`<section class="panel missing-work"><h2>담당의 보완이 필요합니다</h2><p>${M.missing(state).map(k=>M.fields[k]).join(', ')} 정보가 없습니다.</p>${button('담당의 보완 회신 입력','supplement','primary')}</section>`:state.requiresCoordination?'':`<section class="work-actions">${button('확인하고 기관 문의 준비','ready','primary')}</section>`}<details class="support-details"><summary>회송서 원문과 비교하기</summary>${source}</details></div>`;
     }else if(state.stage===1){
-      out+=state.consent?`<p class="notice green">기관 문의 동의가 기록되었습니다.${state.consultation?' · 기록자 '+esc(state.consultation.recorder):''}</p>${inquiryPicker()}`:consultationForm();
+      out+=state.consent?`${assistancePanel()}<p class="notice green">기관 문의 동의가 기록되었습니다.${state.consultation?' · 기록자 '+esc(state.consultation.recorder):''}</p>${inquiryPicker()}`:consultationForm();
       out+=intakeForm()+button('재문의 사유·조건 확인','research','small');
     }else if(state.stage===2){
-      out+=inquiryReplies();
+      out+=assistancePanel()+inquiryReplies();
     }else if(state.stage===3){
-      out+=inquiryReplies();
+      out+=assistancePanel()+inquiryReplies();
     }else if(state.stage===4){
       out+=`<div class="focus-work"><section class="panel"><div class="panel-head"><h2>전원 준비 확인</h2>${badge(selected().name,'navy')}</div><p class="sub">환자가 선택한 기관에 한정해 준비합니다. 확인한 항목만 체크해 주세요.</p>${transferPlanForm()}${checks('prep-documents','기존 절차에 따른 회송 서류와 원 처방 정보를 확인했습니다.',state.prep.documents)}${checks('prep-transport','이동 수단과 동행자 등 이동 준비를 확인했습니다.',state.prep.transport)}${checks('prep-guidance','환자·보호자에게 기존 의료진의 안내를 전달했습니다.',state.prep.guidance)}<div class="work-actions">${button('준비 완료하고 전달하기','handoff','primary')}</div><p class="tiny">전달 기록을 남긴 뒤 첫 진료 회신을 기다립니다.</p></section></div>`;
     }else if(state.stage===5){
@@ -405,7 +448,7 @@
     }else if(state.stage===6){
       out+=`<div class="focus-work"><section class="panel"><div class="panel-head"><h2>도착한 첫 진료 회신</h2>${badge(state.visit.result==='done'?'진료 이행':'진료 미이행',state.visit.result==='done'?'green':'red')}</div>${dl([['회신 기관',selected().name],['첫 진료',state.visit.result==='done'?'진료 이행':'진료 미이행'],['실제 첫 진료 일시',esc(state.visit.visitedAt?.replace('T',' ')||'기존 기록 · 실제 일시 미기록')],['회신 입력 시각',when(state.visit.at)],['추가 메모',esc(state.visit.note||'별도 메모 없음')]])}<p class="notice ${state.visit.result==='done'?'green':'amber'}">${state.visit.result==='done'?'회신을 읽고 의뢰기관 담당자가 최종 확인해 주세요.':'첫 진료가 이루어지지 않았습니다. 사유를 확인하고 다시 연계합니다.'}</p>${state.visit.result==='done'?button('회신 확인하고 연계 완료','ack','primary'):button('미이행 사유 확인·재연계','relink','primary')}</section></div>`;
     }else out+=completion();
-    return out+roundHistory();
+    return out+(state.stage>=4&&state.consent?assistancePanel():'')+roundHistory();
   }
 
   function completion(){return `<section class="panel complete"><div class="symbol">✓</div><h1>의뢰기관의 확인까지 마쳤습니다.</h1><p class="sub" style="margin:auto">수용기관의 첫 진료 이행 회신과 의뢰기관 담당자의 확인 기록이 모두 남았습니다.</p><div class="cards-inline" style="justify-content:center"><div><strong>${selected().name}</strong><span>선택한 수용기관</span></div><div><strong>첫 진료 이행</strong><span>수용기관 회신</span></div><div><strong>확인 완료</strong><span>의뢰기관 담당자</span></div></div><div class="row" style="justify-content:center">${button('처리 기록 보기','history','primary')}${button('진행 기록 내려받기','export')}${button('처음부터 시작','reset')}</div><p class="tiny" style="margin-top:18px">시나리오의 완료 상태입니다. 실제 환자 연계나 임상 성과를 나타내지 않습니다.</p></section>${auditPanel()}`;}
@@ -437,6 +480,7 @@
     out+=`<div class="facility-context"><strong>${esc(f.name)}</strong><span>${facilityType(f)} · ${esc(f.area)}</span>${!f.fresh?badge('등록 정보 재확인 필요','amber'):''}</div>`;
     out+=`<details class="provider-settings panel"><summary>기관 처치 역량·병상 등록</summary><p class="tiny">등록 정보는 같은 의뢰기관의 환자 목록에 연결된 회송 건에 공통 반영됩니다. 환자별 수용 응답과 병상 예약 확정은 별도입니다.</p><label class="field"><span>등록 병상 수</span><input id="provider-beds" type="number" min="0" max="20" value="${f.beds}"></label><label class="check"><input type="checkbox" id="provider-iv" ${f.iv?'checked':''}><span>정맥 투여 처치 가능</span></label><label class="check"><input type="checkbox" id="provider-isolation" ${f.isolation?'checked':''}><span>격리 처치 가능</span></label>${button('기관 등록 정보 저장','provider-save','',state.stage>=4?'disabled':'')}<p class="tiny">기관 선택 전까지 예시 정보를 바꿀 수 있습니다.</p></details>`;
     out+=`<details class="panel"><summary>기관 기본 접수 안내</summary><form id="facility-contact-form">${[['venue','접수 장소'],['address','접수 주소'],['contact','기관 연락처'],['notes','공통 준비물·안내']].map(([k,label])=>`<label class="field"><span>${label}</span><input id="facility-${k}" value="${esc(f[k]||'')}" maxlength="${k==='notes'?1000:240}"></label>`).join('')}<button type="submit">기관 기본 안내 저장</button></form></details>`;
+    if(received&&r?.status!=='withdrawn'&&state.inquiryDraft)out+=`<details class="panel"><summary>전달받은 문의 요약</summary><div class="inquiry-highlight">${highlightedText(state.inquiryDraft,true)}</div></details>`;
     if(!received){return out+`<section class="empty-hint"><h2>현재 이 기관에 생성된 문의가 없습니다.</h2><p class="sub">의뢰기관에서 처치 조건을 확인한 뒤 문의 대상 기관에 비식별 요약을 생성합니다.</p>${button('의뢰기관 화면으로 이동','go-hospital','primary')}</section>`;}
     if(r?.status==='withdrawn'){return out+`<section class="panel"><h2>문의가 종료되었습니다.</h2><p class="sub">${esc(r.reason||'의뢰기관이 문의를 종료했습니다.')}</p>${badge('추가 정보 접근 없음')}</section>`;}
     out+=`<div class="grid"><div><section class="panel"><div class="panel-head"><h2>${sum.shared?'선택 기관 한정 회송 정보':'비식별 수용 문의 요약'}</h2>${badge(sum.shared?'정보 전달 동의 기록':'개인식별정보 미포함','navy')}</div>${sum.shared?transferPlanSummary():''}${dl([['문의 번호',state.caseId],['연령대',sum.age],['필요 처치',esc(sum.treatment)],['치료 기간',esc(sum.period)],['격리 여부',esc(sum.isolation)],['감염 관리',esc(({yes:'필요',no:'해당 없음',unknown:'확인 필요'})[sum.intake.infection])],['산소 공급',esc(({yes:'필요',no:'해당 없음',unknown:'확인 필요'})[sum.intake.oxygen])],['흡인',esc(({yes:'필요',no:'해당 없음',unknown:'확인 필요'})[sum.intake.suction])],...(sum.shared?[['대상자',esc(sum.patient)],['환자번호',esc(sum.patientNumber||'미등록')],['연락처',esc(sum.contact||'미등록')],['약제',esc(sum.drug)],['용량',esc(sum.dose)],['투여 간격',esc(sum.interval)]]:[])])}${sum.unresolvedFields.length?`<p class="notice amber">미확정 항목 · ${sum.unresolvedFields.map(esc).join(', ')}. 필요한 값은 의뢰기관에 보완 요청해 주세요.</p>`:''}${!sum.shared?'<div class="locked">환자 이름·연락처·상세 처방은 기관 선택과 정보 제공 동의 전에는 공개하지 않습니다.</div>':''}</section></div><div>`;
@@ -460,13 +504,13 @@
     document.title=workspace==='home'?'케어브릿지 · 전원·회송 연계':roles[role]+' · 케어브릿지';
     if(sharedLoading){$('#app').innerHTML='<main id="main" class="portal-main"><h1>진행 기록을 불러오고 있어요</h1><p role="status">잠시만 기다려 주세요.</p></main>';return;}
     if(sharedError){$('#app').innerHTML=`<main id="main" class="portal-main"><h1>진행 기록 확인이 필요합니다</h1><p class="notice amber">${esc(sharedError)}</p>${button('다시 불러오기','shared-refresh','primary')}${button('새 회송 시작','reset','small')}</main>`;return;}
-    const scope=role+':'+view+':'+state.caseId,opened=renderedScope===scope?[...document.querySelectorAll('#app details[open]')].map(d=>d.id||d.className+'|'+d.querySelector('summary')?.textContent):[];renderedScope=scope;renderBase();enhance();enhanceUX();enhanceShared();for(const d of document.querySelectorAll('#app details'))if(opened.includes(d.id||d.className+'|'+d.querySelector('summary')?.textContent))d.open=true;const skip=$('.skip');if(skip&&location.protocol!=='file:')skip.href=location.pathname+location.hash;if(working)setBusy(true);
+    const scope=role+':'+view+':'+state.caseId,opened=renderedScope===scope?[...document.querySelectorAll('#app details[open]')].map(d=>d.id||d.className+'|'+d.querySelector('summary')?.textContent):[];renderedScope=scope;renderBase();enhance();enhanceUX();enhanceShared();for(const d of document.querySelectorAll('#app details'))if(opened.includes(d.id||d.className+'|'+d.querySelector('summary')?.textContent))d.open=true;const skip=$('.skip');if(skip&&location.protocol!=='file:')skip.href=location.pathname+location.hash;if(working)setBusy(true);queueMicrotask(()=>refreshAssistance());
   }
   function modal(title,content,actions=''){const d=$('#dialog');d.classList.toggle('wide',title==='병원 상세 비교'||title.startsWith('기관 상세 · '));d.classList.toggle('institution-dialog',title.startsWith('기관 상세 · '));d.innerHTML=`<div class="dialog-head"><h2 id="dialog-title">${title}</h2>${button('닫기','close','quiet small','aria-label="대화상자 닫기"')}</div><div class="dialog-body">${content}</div>${actions?`<div class="dialog-actions">${actions}</div>`:''}`;if(!d.open)d.showModal();enhance();updateFormReadiness();}
   function close(){if($('#dialog').open)$('#dialog').close();}
   function detail(id){
     const f=M.candidates(state).find(x=>x.id===id);if(!f)return;
-    const extra=state.lastAgent?.recommendations?.find(r=>r.id===id),canChoose=role==='patient'&&state.stage===3&&M.accepted(state).some(x=>x.id===id);
+    const extra=currentAssistance()?.recommendations?.find(r=>r.id===id)||state.lastAgent?.recommendations?.find(r=>r.id===id),canChoose=role==='patient'&&state.stage===3&&M.accepted(state).some(x=>x.id===id);
     modal('기관 상세 · '+f.name,`<p class="sub institution-sub">${facilityType(f)} · ${esc(f.area)}</p><div class="institution-tabs" role="tablist" aria-label="기관 상세 정보">${[['facility','시설 정보'],['travel','이동·비용'],['reply','수용 회신']].map(([tab,label],i)=>`<button role="tab" id="institution-tab-${tab}" aria-controls="institution-panel-${tab}" aria-selected="${i===0}" tabindex="${i===0?0:-1}" data-action="detail-tab" data-id="${tab}">${label}</button>`).join('')}</div><section class="institution-panel" role="tabpanel" id="institution-panel-facility" aria-labelledby="institution-tab-facility">${photo(f)}<h3>등록된 시설·처치 정보</h3>${dl([['기관 유형',facilityType(f)],['지역',esc(f.area)],['정맥 투여',capability('정맥 투여',f.iv)],['격리 처치',capability('격리 처치',f.isolation)],['등록 병상',f.beds+'개 · 현재 예약 가능 병상과는 다릅니다.'],['등록 정보 갱신',esc(f.updated)]])}<details class="institution-extra"><summary>그 밖의 등록 정보</summary>${dl([['기관 평가·응답 이력',f.quality+'/100 · 응답률 '+f.responseRate+'% · 불일치 '+f.mismatchRate+'%']])}</details></section><section class="institution-panel" role="tabpanel" id="institution-panel-travel" aria-labelledby="institution-tab-travel" hidden><h3>이동 시간과 하루 예상 비용</h3>${dl([['예상 이동',f.minutes+'분 · '+f.km+'km'],['하루 예상 비용',money(f.cost)],['출발 기준',esc(f.travelOrigin||'예시 거주지 중심')]])}<p class="tiny">예상 이동과 비용은 비교를 위한 등록 정보입니다. 도로 경로 조회 결과와 다를 수 있습니다.</p>${button('이동 경로 확인','route','small',`data-id="${f.id}"`)}<div id="route-result" data-id="${f.id}"></div></section><section class="institution-panel" role="tabpanel" id="institution-panel-reply" aria-labelledby="institution-tab-reply" hidden><h3>이번 문의에 대한 기관 회신</h3>${f.response?.offer?dl([['가능한 방문 일시',esc(f.response.offer.when.replace('T',' '))],['접수 장소',esc(f.response.offer.venue)],['접수 주소',esc(f.response.offer.address)]]):''}${statusBadge(U.facilityStatus(f,state))}<div class="institution-reply">${f.response?.reason?displayFact(f.response.reason):'아직 수용 가능 여부를 회신받지 않았습니다.'}</div>${f.response?.at?`<p class="tiny">회신 기록 ${esc(taskUpdated(f.response.at))}</p>`:''}${extra?`<h3>후보 안내 근거</h3><ul>${extra.basis.map(x=>`<li>${displayFact(x)}</li>`).join('')}</ul>`:''}<p class="notice">등록된 처치 역량과 이 환자의 수용 여부는 다릅니다. 기관의 수용 회신을 확인한 뒤 환자·보호자가 선택합니다.</p></section>`,button('닫기','close','small')+(canChoose?button('이 기관 선택','choose','primary',`data-id="${id}"`):''));
   }
   function switchDetailTab(id){const tab=$('#institution-tab-'+id);if(!tab)return;for(const item of document.querySelectorAll('.institution-tabs [role="tab"]')){const active=item===tab;item.setAttribute('aria-selected',String(active));item.tabIndex=active?0:-1;}for(const panel of document.querySelectorAll('.institution-panel'))panel.hidden=panel.id!=='institution-panel-'+id;tab.focus();}
@@ -476,6 +520,8 @@
     const link=event.target.closest('a[data-route]');if(link){if(event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;event.preventDefault();navigateRoute(link.dataset.route);return;}
     const el=event.target.closest('[data-action]');if(!el||el.disabled)return;const a=el.dataset.action,id=el.dataset.id;
     if(a==='detail-tab'){switchDetailTab(id);return;}
+    if(a==='assist-refresh'){await refreshAssistance(true);return;}
+    if(a==='assist-detail'){assistanceDetail();return;}
     if(a==='tasks-refresh'){await loadTasks();return;}
     if(a==='task-filter'){taskFilter=id;render();return;}
     if(a==='preview-role'){navigateRoute(rolePath(id));return;}
@@ -565,7 +611,7 @@
     if(a==='confirm-relink'){if(await act({type:'relink',reasonType:$('#relink-type').value,confirmed:$('#relink-confirmed').checked,physicianConfirmed:$('#relink-physician').checked}))close();return;}
     if(a==='send'){
       const ids=selectedInquiryIds();
-      if(await act({type:'send',ids,confirmRepeat:$('#confirm-repeat')?.checked||false,deadline:$('#reply-deadline')?.value||null}))toast('선택한 '+ids.length+'곳의 문의를 만들었습니다.');
+      if(await act({type:'send',ids,confirmRepeat:$('#confirm-repeat')?.checked||false,deadline:$('#reply-deadline')?.value||null,draftConfirmed:$('#draft-confirmed')?.checked===true}))toast('선택한 '+ids.length+'곳의 문의를 만들었습니다.');
       return;
     }
     if(['ready','handoff','ack'].includes(a)){if(await act({type:a})){toast(a==='ack'?'의뢰기관 확인까지 완료했습니다.':'진행 상태를 반영했습니다.');}return;}
@@ -646,7 +692,7 @@
       if(state.stage===6&&state.visit?.result==='missed'){const live=$('.automation-live');if(live)live.innerHTML='<span class="connection-dot"></span>첫 진료 미이행 · 담당자의 사유 확인과 재연계 필요';}
       if(state.stage===7){const old=$('.complete h1');if(old){const h=document.createElement('h2');h.textContent=old.textContent;old.replaceWith(h);}}
     }
-    if(view==='guide'){$('.readme').innerHTML=`<h2>이용 순서</h2><ol><li>의뢰기관: 담당의 결정 확인 → 정보 구조화 → 기관 문의 준비</li><li>의뢰기관: 상담에서 희망 조건·동의 확인 → 상담 기록</li><li>의뢰기관: 문의할 기관 선택 → 수용 문의 생성 → 기관별 회신 확인 → 수용 확인 후보 안내</li><li>환자·보호자: 사진·거리·비용·기관 회신 비교 → 기관 선택과 별도 정보 제공 동의</li><li>의뢰기관: 서류·이동 일정·환자 안내 확인 → 전달 기록 생성</li><li>수용기관: 첫 진료 이행 또는 미이행 회신</li><li>의뢰기관: 이행 회신 확인 후 완료. 미이행은 재연계.</li></ol><h2>AI가 도와주는 업무</h2><p>회송서의 항목을 정리하고, 환자 조건에 맞는 기관의 추천 근거와 문의 초안을 작성합니다. 기관 회신을 분석해 다음 작업을 안내합니다. 처치 가능 여부나 수용 결정은 의료진·기관이 판단하고, 기관은 환자·보호자가 선택합니다.</p><p>환자의 거리·비용·방문 시간 조건은 후보 탐색에 반영됩니다. 기관 정보·평가·응답 이력·등록 병상은 예시값입니다. 기관이 등록 정보를 변경하거나 환자가 후보를 거절하면 탐색 조건을 다시 확인하고 문의 동의를 받습니다.</p><p>공개 지도에서 실제 의료기관의 기본 정보와 예시 위치의 이동 경로를 조회할 수 있습니다. 회송 예시의 기관 문의·수용 응답은 모의 데이터이며, 실제 병원 연락·병상 예약·문자 전송은 하지 않습니다.</p><h2>예외 경로</h2><p>정보 누락: 담당의 보완 회신 전 진행 차단. 수용 불가: 40km로 범위 확장 후 동의 재확인. 무응답: 자동 진행을 끄고 담당자가 범위 조정. 추가 정보 요청: 자동 진행을 끈 뒤 기관의 요청에 담당의 확인 내용을 회신. 첫 진료 미이행: 완료 차단 후 재연계.</p><h2>저장과 사진</h2><p>환자·회송 정보와 처리 기록은 DB에 저장됩니다. 역할별 이용 링크로 같은 회송 건에 연결합니다. 기관 계정 로그인 방식은 아닙니다. 내려받은 HTML을 직접 열면 서버 기능 없이 브라우저 모드로 동작합니다.</p><p>각 기관의 시설 사진은 서로 다른 AI 생성 예시이며 실제 기관의 시설이나 품질을 나타내지 않습니다. 기관·거리·금액·처방도 모두 예시 데이터입니다.</p>${button('기능 안내','integration','primary')}`;}
+    if(view==='guide'){$('.readme').innerHTML=`<h2>이용 순서</h2><ol><li>의뢰기관: 담당의 결정 확인 → 정보 구조화 → 기관 문의 준비</li><li>의뢰기관: 상담에서 희망 조건·동의 확인 → 상담 기록</li><li>의뢰기관: 문의할 기관 선택 → 수용 문의 생성 → 기관별 회신 확인 → 수용 확인 후보 안내</li><li>환자·보호자: 사진·거리·비용·기관 회신 비교 → 기관 선택과 별도 정보 제공 동의</li><li>의뢰기관: 서류·이동 일정·환자 안내 확인 → 전달 기록 생성</li><li>수용기관: 첫 진료 이행 또는 미이행 회신</li><li>의뢰기관: 이행 회신 확인 후 완료. 미이행은 재연계.</li></ol><h2>AI가 도와주는 업무</h2><p>회송서의 항목을 정리하고, 환자 조건에 맞는 기관의 추천 근거와 문의 초안을 작성합니다. 기관 회신을 분석해 다음 작업을 안내합니다. 처치 가능 여부나 수용 결정은 의료진·기관이 판단하고, 기관은 환자·보호자가 선택합니다.</p><p>환자의 거리·비용·방문 시간 조건은 후보 탐색에 반영됩니다. 기관 정보·평가·응답 이력·등록 병상은 예시값입니다. 기관이 등록 정보를 변경하거나 환자가 후보를 거절하면 탐색 조건을 다시 확인하고 문의 동의를 받습니다.</p><p>공개 지도에서 실제 의료기관의 기본 정보와 예시 위치의 이동 경로를 조회할 수 있습니다. 회송 예시의 기관 문의·수용 응답은 모의 데이터이며, 실제 병원 연락·병상 예약·문자 전송은 하지 않습니다.</p><h2>예외 경로</h2><p>정보 누락: 담당의 보완 회신 전 진행 차단. 수용 불가: 사유를 확인해 일정·거리·비용 조건 조정 후 동의 재확인. 무응답: 회신 기한을 확인하고 담당자가 재문의 여부 결정. 추가 정보 요청: 담당의 확인 내용을 보완 회신. 첫 진료 미이행: 완료 차단 후 재연계.</p><h2>저장과 사진</h2><p>환자·회송 정보와 처리 기록은 DB에 저장됩니다. 역할별 이용 링크로 같은 회송 건에 연결합니다. 기관 계정 로그인 방식은 아닙니다. 내려받은 HTML을 직접 열면 서버 기능 없이 브라우저 모드로 동작합니다.</p><p>각 기관의 시설 사진은 서로 다른 AI 생성 예시이며 실제 기관의 시설이나 품질을 나타내지 않습니다. 기관·거리·금액·처방도 모두 예시 데이터입니다.</p>${button('기능 안내','integration','primary')}`;}
     const dialog=$('#dialog');if(dialog.open&&dialog.querySelector('h2')?.textContent&&M.facilities.some(f=>f.name===dialog.querySelector('h2').textContent)&&!dialog.querySelector('.facility-photo')){
       const f=M.facilities.find(f=>f.name===dialog.querySelector('h2').textContent);dialog.querySelector('.dialog-body').insertAdjacentHTML('afterbegin',photo(f));dialog.querySelector('.dialog-body').insertAdjacentHTML('beforeend',`<h3>이동 경로 참고</h3><p class="tiny">공개 지도에서 이동 경로 확인 · 예시 위치 기준</p>${button('이동 경로 확인','route','',`data-id="${f.id}"`)}<div id="route-result" data-id="${f.id}"></div>`);
     }
@@ -701,6 +747,7 @@
         hint.textContent=text;hint.hidden=!text;
       }
     };
+    if($('#draft-confirmed')){const ready=selectedInquiryIds().length>0&&$('#draft-confirmed').checked&&!assistanceWorking;gate('send',ready);$('#inquiry-hint').textContent=!selectedInquiryIds().length?'문의할 기관을 선택해 주세요.':assistanceWorking?'AI 초안을 정리하고 있습니다.':!$('#draft-confirmed').checked?'기관에 전달할 문의 초안을 확인해 주세요.':'';}
     if($('#share-consent'))gate('confirm-choice',$('#share-consent').checked);
     if($('#doctor-replied'))gate('confirm-supplement',$('#doctor-replied').checked&&!!$('#supp-reviewer')?.value.trim()&&[...M.missing(state),...M.unresolved(state)].every(k=>!M.unresolvedValue($('#supp-'+k)?.value)));
     if($('#inquiry-attest'))gate('send-info',$('#inquiry-attest').checked&&!!$('#inquiry-note')?.value.trim()&&!!$('#inquiry-reviewer')?.value.trim());
@@ -790,9 +837,10 @@
       else inquirySelection.delete(t.dataset.inquiryId);
       const count=selectedInquiryIds().length;
       $('#inquiry-selection-count').textContent=count+'곳 선택';
-      $('[data-action="send"]').disabled=count===0;$('#inquiry-hint').textContent=count?'':'문의할 기관을 선택해 주세요.';
+      updateFormReadiness();
       return;
     }
+    if(t.id==='draft-confirmed'){draftReviewedKey=t.checked?M.assistanceKey(state)+(currentAssistance()?.draft||'basic'):'';updateFormReadiness();return;}
     if(t.id==='scenario-select'){resetModal(t.value);return;}
     if(t.id==='facility-select'){navigateRoute(rolePath('facility',view,t.value));return;}
     if(t.id==='referral-source'){return;}

@@ -195,3 +195,14 @@ body:not([data-workspace="patient"]) .staff-facility.staff-row{display:block;bor
 .clinical-review .field { max-width: 360px; }
 
 #decline-code-field[hidden], #consult-authority[hidden] { display: none !important; }
+
+/* AI assistance stays beside the work it supports, without changing role identity. */
+.ai-assistance{border-left:4px solid var(--navy,#252d75);margin:18px 0 22px;background:#fff}
+.ai-workflow{display:flex;flex-wrap:wrap;list-style:none;gap:7px 16px;padding:0;margin:12px 0 18px;color:#69758a;font-size:12px}
+.ai-workflow li::before{content:'○';margin-right:5px}.ai-workflow li.checked{color:#176454}.ai-workflow li.checked::before{content:'✓'}
+.ai-next{display:flex;gap:12px;align-items:baseline;padding:14px 16px;background:#f1f3fa;border-radius:6px;margin:12px 0}.ai-next>span{font-size:12px;color:#596582;flex-shrink:0}.ai-next strong{font-size:14px;line-height:1.7}
+.ai-caption{display:block;font-size:11px;font-weight:700;color:#303a80;margin-top:7px}.ai-choice-basis{display:block;font-size:12px;color:#526078}.ai-choice-basis ul{margin:5px 0;padding-left:18px;line-height:1.65}
+.inquiry-choice .ai-choice-basis ul{display:flex;gap:4px 20px;flex-wrap:wrap}.inquiry-choice .ai-choice-basis li{max-width:100%}
+.ai-draft-review{margin:20px 0;padding:18px 0;border-top:1px solid #dfe4ef;border-bottom:1px solid #dfe4ef}.ai-draft-review h3{margin:0 0 12px;font-size:15px}.ai-draft-review .inquiry-highlight{margin-bottom:12px;padding:14px 18px;background:#f6f8fc;border-radius:6px}.ai-draft-review .referral-note{white-space:pre-wrap}
+.ai-status{color:#45568b;line-height:1.7}.ai-checks{margin:12px 0}.ai-checks summary{font-size:13px;color:#885a15}.ai-checks li{font-size:13px;line-height:1.8}.ai-reply-list{display:grid;gap:10px;margin:16px 0}.ai-reply-list .reply-card{margin:0;padding:12px 16px}.ai-reply-list h3{font-size:14px;margin:0}.ai-quote{font-size:13px;margin:8px 0;line-height:1.7}.source-evidence{margin-top:5px;font-size:12px;color:#65718b}.source-evidence p{white-space:pre-wrap;word-break:break-word;padding:8px;background:#f5f6fa}
+@media(max-width:680px){.ai-next{display:block}.ai-next>span{display:block;margin-bottom:4px}.ai-assistance{padding:18px 15px}.ai-workflow{gap:7px 10px}.inquiry-choice .ai-choice-basis ul{display:block}}

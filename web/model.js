@@ -98,6 +98,13 @@
     if(s.stage===2){if(s.inquiries.some(id=>!s.responses[id]))return 'wait_responses';if(accepted(s).length)return 'present_candidates';return s.inquiries.some(id=>s.responses[id]?.status==='more')?'request_information':'expand_search';}
     return ['wait_patient_choice','prepare_transfer','request_first_visit',s.visit?.result==='missed'?'relink':'request_referrer_confirmation','complete'][s.stage-3];
   }
+  function assistanceAction(s){
+    if(s.stage===1)return candidates(s).some(f=>f.eligible)?'choose_institutions':'manual_review';
+    if(s.stage===2){const pending=s.inquiries.some(id=>!s.responses[id]),more=s.inquiries.some(id=>s.responses[id]?.status==='more');return accepted(s).length?(pending||more?'review_partial':'patient_choice'):more?'provide_information':pending?'await_replies':'adjust_conditions';}
+    return ['patient_choice','prepare_transfer','await_visit',s.visit?.result==='missed'?'review_missed':'confirm_visit','completed'][s.stage-3]||'manual_review';
+  }
+  function assistanceKey(s){return JSON.stringify({stage:s.stage,round:s.round,consent:s.consent,data:s.data,preferences:s.preferences,expanded:s.expanded,intake:s.intake||null,request:s.referralRequest||null,inquiries:s.inquiries,responses:s.responses,updates:s.facilityUpdates,selected:s.selected,visit:s.visit,notes:s.inquiryNotes});}
+  function inquiryTemplate(s){return ['기관 수용 가능 여부를 확인 부탁드립니다.',...['treatment','period','isolation'].map(k=>fields[k]+': '+s.data[k]),...(requestValid(s.referralRequest)?['희망 전원일: '+s.referralRequest.date]:[]),'가능한 일정 또는 판단에 필요한 추가 정보를 회신해 주세요.'].join('\n');}
   function facilityRequest(s,id){const f=candidates(s).find(f=>f.id===id);return {id,scenario:s.scenario,round:s.round,profile:s.preferences.profile||'balanced',preferences:s.preferences.custom?customPreferences({...s.preferences.custom,priority:s.preferences.priority}):null,expanded:!!s.expanded,consent:s.consent===true,inquiryOpen:s.stage===2&&s.inquiries.includes(id),capabilities:f?{iv:f.iv,isolation:f.isolation,beds:f.beds}:null,summary:{age:s.age,treatment:s.data.treatment,period:s.data.period,isolation:s.data.isolation},informationProvided:!!s.inquiryNotes?.[id],referralRequest:requestValid(s.referralRequest)?s.referralRequest:null,message:s.inquiryDraft||''};}
   function summary(s,facilityId) {
     const shared=s.selected===facilityId&&s.shareConsent;
@@ -187,6 +194,9 @@
         need(action.confirmRepeat||!ids.some(id=>{const p=previousInquiry(s,id);return p?.sameConditions&&(p.response?.status==='rejected'||p.visit?.result==='missed'&&p.selected===id);}), '같은 조건의 이전 거절·미이행 기록을 확인해 주세요.');
         s.inquiryStartedAt=new Date().toISOString();s.replyDeadline=action.deadline||null;
         need(!s.replyDeadline||localTimeValid(s.replyDeadline)&&Date.parse(s.replyDeadline+'+09:00')>Date.now(),'회신 요청 기한은 현재 이후로 입력해 주세요.');
+        const draft=s.assistance?.inputKey===assistanceKey(s)?s.assistance.draft:'';
+        need(!draft||action.draftConfirmed===true,'AI 문의 초안을 확인해 주세요.');
+        s.inquiryDraft=draft||inquiryTemplate(s);s.sentInquiryDraft=s.inquiryDraft;
         s.inquiries=[...ids];
         s.manualInquiry=true;
         s.responses={};s.inquiryNotes={};s.inquiryRequests={};s.lastAgent=null;
@@ -231,7 +241,7 @@
     s.metrics.started=s.metrics.started||Date.now();s.metrics.actions++;
     s.events.unshift({type:action.type,actor,detail,time:new Date().toISOString()});return s;
   }
-  const api={today,unresolvedValue,unresolved,clinicalReviewed,previousInquiry,declineReasons,facilities,profiles,locations,customPreferences,exampleOffer,localTimeValid,requestValid,offerValid,visitValidation,scheduleValid,profile,score,agentAction,facilityRequest,stages,ageGroups,fields,initial,extract,missing,candidates,accepted,summary,transition};
+  const api={today,unresolvedValue,unresolved,clinicalReviewed,previousInquiry,declineReasons,facilities,profiles,locations,customPreferences,exampleOffer,localTimeValid,requestValid,offerValid,visitValidation,scheduleValid,profile,score,agentAction,assistanceAction,assistanceKey,inquiryTemplate,facilityRequest,stages,ageGroups,fields,initial,extract,missing,candidates,accepted,summary,transition};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.CareBridge=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
