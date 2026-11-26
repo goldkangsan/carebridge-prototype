@@ -118,3 +118,21 @@ test('AI 분석만 갱신된 경우 기관 회신 입력은 유지하며 해당 
  const conflict=await post(c,'facility/saebom',{operation:'transition',revision:old.revision,viewKey,action:{type:'response',id:'saebom',status:'rejected',reason:'과거 화면의 변경'}});
  assert.equal(conflict.conflict,true);assert.equal(conflict.state.responses.saebom.status,'accepted');
 });
+
+test('SQL 재매칭은 기관별 거절 조건을 보존하고 후보 제외와 확인자 기록을 서버에서 강제',async()=>{
+ const c=await create();await ready(c);await act(c,'hospital',{type:'consultation',person:'patient',recorder:'QA',confirmed:true,roomType:'single'});
+ await act(c,'hospital',{type:'send',ids:['saebom','solbit','daon']});
+ await act(c,'facility/saebom',{type:'response',id:'saebom',status:'rejected',reason:'처치 인력 부족',reasonCode:'treatment'});
+ await act(c,'facility/solbit',{type:'response',id:'solbit',status:'rejected',reason:'희망 일정 불가',reasonCode:'schedule'});
+ await act(c,'facility/daon',{type:'response',id:'daon',status:'rejected',reason:'1인실 불가',reasonCode:'room'});
+ const changed=await act(c,'hospital',{type:'research',reason:'거절 사유 반영',date:'2099-12-02',roomType:'single'});
+ assert.equal(M.candidates(changed.state).find(f=>f.id==='saebom').eligible,false);assert.equal(M.candidates(changed.state).find(f=>f.id==='solbit').eligible,true);assert.equal(M.candidates(changed.state).find(f=>f.id==='daon').eligible,false);
+ assert.equal(changed.state.roundHistory[0].responses.daon.reasonCode,'room');assert.equal(changed.state.matchingFeedback.length,3);
+ assert.equal((await read(c,'facility/saebom')).state.matchingFeedback.length,0);assert.equal((await read(c,'facility/saebom')).state.adaptationHistory.length,0);
+ assert.equal((await post(c,'patient',{operation:'transition',action:{type:'clearDecline',id:'saebom',confirmed:true,reviewer:'QA',note:'변경'}})).status,403);
+ await act(c,'hospital',{type:'consultation',person:'patient',recorder:'QA',confirmed:true,roomType:'single'});
+ const invalid=await post(c,'hospital',{operation:'transition',action:{type:'send',ids:['saebom'],confirmRepeat:true}});assert.equal(invalid.status,422);
+ const resolution=await act(c,'hospital',{type:'clearDecline',id:'saebom',confirmed:true,reviewer:'기관 연락 확인자',note:'새 처치 인력이 확보되어 다시 검토 가능하다고 기관에서 확인'});
+ assert.equal(resolution.state.consent,false);assert.equal(resolution.state.matchingFeedback.find(f=>f.id==='saebom').resolved.reviewer,'기관 연락 확인자');
+ const reread=await read(c);assert.equal(M.candidates(reread.state).find(f=>f.id==='saebom').eligible,true);assert.equal(reread.state.fieldHistory.at(-1).reviewer,'기관 연락 확인자');
+});

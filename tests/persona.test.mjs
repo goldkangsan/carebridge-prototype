@@ -66,6 +66,8 @@ test('일정 문제는 날짜를 바꿔 재문의하고 회차별 거절·방문
 test('같은 조건 재문의는 이전 거절 확인을 요구',()=>{
  let s=inquiry();s=M.transition(s,{type:'response',id:'saebom',status:'rejected',reason:'병상 없음',reasonCode:'beds'},'facility');
  s=M.transition(s,{type:'research',reason:'다시 확인'});s=M.transition(s,{type:'consent',value:true},'patient');
+ assert.throws(()=>M.transition(s,{type:'send',ids:['saebom'],confirmRepeat:true}),/문의 가능한/);
+ s=M.transition(s,{type:'clearDecline',id:'saebom',confirmed:true,reviewer:'확인 담당자',note:'기관과 새 병상 여건 확인'});s=M.transition(s,{type:'consent',value:true},'patient');
  assert.throws(()=>M.transition(s,{type:'send',ids:['saebom']}),/이전 거절/);
  assert.equal(M.transition(s,{type:'send',ids:['saebom'],confirmRepeat:true}).stage,2);
 });

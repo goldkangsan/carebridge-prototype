@@ -19,7 +19,34 @@
   function localTimeValid(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+'+09:00'))&&new Date(Date.parse(value+'+09:00')+9*3600000).toISOString().slice(0,16)===value;}
   const today=()=>new Date(Date.now()+9*3600000).toISOString().slice(0,10);
   const unresolvedValue=value=>!String(value||'').trim()||/모름|미정|미확정|확인\s*필요|참조|기록\s*기준/.test(String(value));
+  const roomTypes={unspecified:'별도 지정 없음',single:'1인실',shared:'다인실',isolation:'격리실'};
   const declineReasons={beds:'병상 없음',isolation:'격리실 없음',room:'희망 병실 없음',treatment:'필요 처치 불가',schedule:'희망 일정 불가',information:'정보 부족',other:'기타'};
+  const roomType=s=>s.admissionPreferences?.roomType||'unspecified';
+  const informationKey=s=>JSON.stringify({data:s.data,intake:s.intake||null});
+  function collectDeclines(s){
+    const records=new Map((s.matchingFeedback||[]).map(r=>[r.id,r]));
+    for(const id of s.inquiries||[]){const r=s.responses[id];if(r?.status==='accepted')records.delete(id);
+      else if(r?.status==='rejected')records.set(id,{id,code:Object.hasOwn(declineReasons,r.reasonCode)?r.reasonCode:'other',reason:r.reason,round:s.round,at:r.at,date:s.referralRequest?.date||null,treatment:s.data.treatment,isolation:s.data.isolation,roomType:roomType(s),informationKey:informationKey(s)});
+    }
+    return [...records.values()];
+  }
+  function feedbackState(s,r){
+    if(r.resolved)return {blocked:false,explanation:'기관 여건 변경을 담당자가 확인하여 재문의 가능'};
+    const sameDate=(s.referralRequest?.date||null)===r.date,sameRoom=roomType(s)===r.roomType,sameTreatment=s.data.treatment===r.treatment,sameIsolation=s.data.isolation===r.isolation;
+    if(r.code==='schedule')return {blocked:sameDate,explanation:sameDate?'희망 일정 불가 회신 · 같은 희망일에서 제외':'희망일 변경 · 새 일정으로 수용 여부 재확인 필요'};
+    if(r.code==='beds')return {blocked:sameDate&&sameRoom,explanation:sameDate&&sameRoom?'병상 없음 회신 · 같은 희망일·병실 조건에서 제외':'희망일 또는 병실 조건 변경 · 수용 여부 재확인 필요'};
+    if(r.code==='room')return {blocked:sameRoom,explanation:sameRoom?'희망 병실 수용 불가 회신 · 같은 병실 조건에서 제외':'희망 병실 조건 변경 · 새 병실 조건으로 재확인 필요'};
+    if(r.code==='treatment')return {blocked:sameTreatment,explanation:sameTreatment?'필요 처치 수용 불가 회신 · 처치 요구는 유지하고 해당 기관 제외':'임상 조건 변경 · 담당의 확인 내용으로 재확인 필요'};
+    const clinicalIsolation=!!s.data.isolation&&!/해당 없음|불필요|없음/.test(s.data.isolation);
+    if(r.code==='isolation')return {blocked:sameIsolation&&(clinicalIsolation||sameRoom),explanation:sameIsolation&&(clinicalIsolation||sameRoom)?'격리 여건 수용 불가 회신 · 같은 격리·병실 조건에서 제외':'격리 또는 병실 조건 변경 · 수용 여건 재확인 필요'};
+    if(r.code==='information')return {blocked:informationKey(s)===r.informationKey,explanation:informationKey(s)===r.informationKey?'정보 부족 회신 · 정보 보완 또는 확인 기록 전 재문의 보류':'수용 판단 정보 변경 · 보완 내용으로 재확인 필요'};
+    return {blocked:false,explanation:'기타 사유 · 담당자 검토 후 재문의 여부 확인'};
+  }
+  function adaptationSummary(s){return (s.matchingFeedback||[]).map(r=>({...r,...feedbackState(s,r),label:declineReasons[r.code],name:facilities.find(f=>f.id===r.id)?.name||r.id}));}
+  function rematchPlan(s){
+    const records=collectDeclines(s),instructions={beds:'같은 희망일·병실에서 병상이 없다고 회신한 기관을 제외합니다. 희망일·병실을 바꾸면 재확인 대상으로 돌립니다.',schedule:'희망일을 유지하면 일정 불가 기관을 제외하고, 날짜를 바꾸면 새 일정으로 재문의할 수 있습니다.',isolation:'환자의 격리 요구를 유지하고, 해당 격리·병실 조건을 수용할 수 없다고 회신한 기관을 제외합니다.',room:'희망 병실을 유지하면 병실 불가 기관을 제외합니다. 병실 변경은 환자·보호자와 상담한 뒤 선택합니다.',treatment:'환자의 필요 처치는 그대로 유지하고, 이번 처치 요구를 수용할 수 없다고 회신한 기관을 제외합니다.',information:'정보가 보완되거나 확인 기록이 남기 전까지 같은 기관에 같은 정보로 재문의하지 않습니다.',other:'기타 사유는 자동 추정하지 않습니다. 회신 내용을 담당자가 검토합니다.'};
+    return Object.keys(declineReasons).map(code=>({code,label:declineReasons[code],text:instructions[code],ids:records.filter(r=>r.code===code&&!r.resolved).map(r=>r.id)})).filter(x=>x.ids.length);
+  }
   function requestValid(value){return !!(value&&Object.keys(value).every(k=>['date','kind'].includes(k))&&['inpatient','outpatient'].includes(value.kind)&&localTimeValid(value.date+'T00:00'));}
   function offerValid(a){return !!(a&&localTimeValid(a.when)&&typeof a.venue==='string'&&a.venue.trim()&&typeof a.address==='string'&&a.address.trim()&&['venue','address','contact','notes'].every(k=>a[k]===undefined||typeof a[k]==='string'&&a[k].length<=(k==='notes'?1000:240))&&(!a.contact||/^[0-9+ ()-]{7,30}$/.test(a.contact)));}
   function scheduleValid(s){return offerValid(s.transferPlan)&&s.transferPlan.confirmed===true;}
@@ -58,7 +85,7 @@
       notes:{...s.inquiryNotes},requests:{...s.inquiryRequests},
       request:s.referralRequest?{...s.referralRequest}:null,
       preferences:JSON.parse(JSON.stringify(s.preferences)),
-      selected:s.selected,visit:s.visit?{...s.visit}:null
+      selected:s.selected,visit:s.visit?{...s.visit}:null,admissionPreferences:{roomType:roomType(s)},clinicalRequirements:{treatment:s.data.treatment,isolation:s.data.isolation}
     });
   }
   function previousInquiry(s,id){
@@ -68,6 +95,8 @@
         ...round,responses:undefined,response:round.responses[id],
         sameConditions:JSON.stringify(round.request||null)===JSON.stringify(s.referralRequest||null)
           &&JSON.stringify(round.preferences)===JSON.stringify(s.preferences)
+          &&(!round.admissionPreferences||round.admissionPreferences.roomType===roomType(s))
+          &&(!round.clinicalRequirements||round.clinicalRequirements.treatment===s.data.treatment&&round.clinicalRequirements.isolation===s.data.isolation)
       };
     }
     return null;
@@ -83,11 +112,13 @@
       if(s.preferences.custom){const origin=locations[s.preferences.custom.location],[lon,lat]=points[f.id],rad=x=>x*Math.PI/180,a=Math.sin(rad(lat-origin.lat)/2)**2+Math.cos(rad(origin.lat))*Math.cos(rad(lat))*Math.sin(rad(lon-origin.lon)/2)**2;f.km=Math.round(6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))*1.3*10)/10;f.minutes=Math.max(5,Math.round(f.km*2.2+8));f.estimatedTravel=true;f.travelOrigin=origin.label;}
       if(!f.iv)reasons.push('필요 처치 불가');
       if(requiresIsolation&&!f.isolation)reasons.push('격리 조건 불일치');
+      if(roomType(s)==='isolation'&&!f.isolation)reasons.push('희망 격리실 조건 불일치');
       if(f.km>p.maxKm)reasons.push('희망 이동 범위 초과');
       if(p.maxCost&&f.cost>p.maxCost)reasons.push('희망 비용 상한 초과');
       if(p.maxMinutes&&f.minutes>p.maxMinutes)reasons.push('희망 이동 시간 초과');
       if(f.beds===0)reasons.push('기관 등록 병상 없음');
       if(f.expanded&&!s.expanded)reasons.push('확장 탐색 대상');
+      const feedback=adaptationSummary(s).find(r=>r.id===f.id);if(feedback?.blocked)reasons.push(feedback.explanation);
       return {...f,reasons,score:score(s,f),eligible:reasons.length===0,response:s.responses[f.id]||null};
     }).sort((a,b)=>b.score-a.score||a.km-b.km);
   }
@@ -103,12 +134,12 @@
     if(s.stage===2){const pending=s.inquiries.some(id=>!s.responses[id]),more=s.inquiries.some(id=>s.responses[id]?.status==='more');return accepted(s).length?(pending||more?'review_partial':'patient_choice'):more?'provide_information':pending?'await_replies':'adjust_conditions';}
     return ['patient_choice','prepare_transfer','await_visit',s.visit?.result==='missed'?'review_missed':'confirm_visit','completed'][s.stage-3]||'manual_review';
   }
-  function assistanceKey(s){return JSON.stringify({stage:s.stage,round:s.round,consent:s.consent,data:s.data,preferences:s.preferences,expanded:s.expanded,intake:s.intake||null,request:s.referralRequest||null,inquiries:s.inquiries,responses:s.responses,updates:s.facilityUpdates,selected:s.selected,visit:s.visit,notes:s.inquiryNotes});}
-  function inquiryTemplate(s){return ['기관 수용 가능 여부를 확인 부탁드립니다.',...['treatment','period','isolation'].map(k=>fields[k]+': '+s.data[k]),...(requestValid(s.referralRequest)?['희망 전원일: '+s.referralRequest.date]:[]),'가능한 일정 또는 판단에 필요한 추가 정보를 회신해 주세요.'].join('\n');}
+  function assistanceKey(s){return JSON.stringify({stage:s.stage,round:s.round,consent:s.consent,data:s.data,preferences:s.preferences,expanded:s.expanded,intake:s.intake||null,request:s.referralRequest||null,inquiries:s.inquiries,responses:s.responses,updates:s.facilityUpdates,selected:s.selected,visit:s.visit,notes:s.inquiryNotes,matchingFeedback:s.matchingFeedback||[],admissionPreferences:s.admissionPreferences||null});}
+  function inquiryTemplate(s){return ['기관 수용 가능 여부를 확인 부탁드립니다.',...['treatment','period','isolation'].map(k=>fields[k]+': '+s.data[k]),...(requestValid(s.referralRequest)?['희망 전원일: '+s.referralRequest.date]:[]),...(roomType(s)!=='unspecified'?['희망 병실: '+roomTypes[roomType(s)]]:[]),'가능한 일정 또는 판단에 필요한 추가 정보를 회신해 주세요.'].join('\n');}
   function facilityRequest(s,id){const f=candidates(s).find(f=>f.id===id);return {id,scenario:s.scenario,round:s.round,profile:s.preferences.profile||'balanced',preferences:s.preferences.custom?customPreferences({...s.preferences.custom,priority:s.preferences.priority}):null,expanded:!!s.expanded,consent:s.consent===true,inquiryOpen:s.stage===2&&s.inquiries.includes(id),capabilities:f?{iv:f.iv,isolation:f.isolation,beds:f.beds}:null,summary:{age:s.age,treatment:s.data.treatment,period:s.data.period,isolation:s.data.isolation},informationProvided:!!s.inquiryNotes?.[id],referralRequest:requestValid(s.referralRequest)?s.referralRequest:null,message:s.inquiryDraft||''};}
   function summary(s,facilityId) {
     const shared=s.selected===facilityId&&s.shareConsent;
-    return {caseId:s.caseId,age:s.age,treatment:s.data.treatment||'구조화 전',isolation:s.data.isolation||'확인 필요',period:s.data.period||'확인 필요',unresolvedFields:s.unresolvedFields||unresolved(s).map(k=>fields[k]),intake:s.intake||{infection:'unknown',oxygen:'unknown',suction:'unknown'},patientNumber:shared?s.patientRecord?.number:null,contact:shared?s.patientRecord?.contact:null,
+    return {caseId:s.caseId,age:s.age,treatment:s.data.treatment||'구조화 전',isolation:s.data.isolation||'확인 필요',period:s.data.period||'확인 필요',unresolvedFields:s.unresolvedFields||unresolved(s).map(k=>fields[k]),intake:s.intake||{infection:'unknown',oxygen:'unknown',suction:'unknown'},roomType:roomType(s),patientNumber:shared?s.patientRecord?.number:null,contact:shared?s.patientRecord?.contact:null,
       patient:shared?s.patient:null,drug:shared?s.data.drug:null,dose:shared?s.data.dose:null,interval:shared?s.data.interval:null,shared};
   }
   function transition(state,action,actor='hospital') {
@@ -117,6 +148,7 @@
     const role=r=>need(actor===r,'현재 역할에서는 이 작업을 수행할 수 없습니다.');
     const at=n=>need(s.stage===n,'진행 단계를 확인해 주세요.');
     let detail='';
+    if(['research','expand','profile','customPreferences','rejectCandidates'].includes(action.type))s.matchingFeedback=collectDeclines(s);
     if(['rejectCandidates','profile','customPreferences','expand','relink','research'].includes(action.type)||action.type==='consent'&&!action.value)archiveRound(s,action.reason||({rejectCandidates:'환자 조건 변경',profile:'희망 조건 변경',customPreferences:'희망 조건 변경',expand:'탐색 범위 변경',relink:'첫 진료 미이행 재연계',research:'재문의',consent:'문의 동의 철회'})[action.type]);
     s.roundHistory=s.roundHistory||[];s.fieldHistory=s.fieldHistory||[];
     switch(action.type){
@@ -151,6 +183,7 @@
         need(['patient','representative'].includes(action.person)&&String(action.recorder||'').trim(),'동의한 사람과 기록자를 입력해 주세요.');
         if(action.person==='representative')need(action.authorityConfirmed&&String(action.relationship||'').trim(),'보호자 관계와 동의 권한 확인을 기록해 주세요.');
         if(action.preferences)s.preferences=customPreferences(action.preferences);
+        if(action.roomType!==undefined){need(Object.hasOwn(roomTypes,action.roomType),'희망 병실을 확인해 주세요.');s.admissionPreferences={roomType:action.roomType};}
         s.consultation={person:action.person,relationship:action.person==='representative'?String(action.relationship).slice(0,80):'',authorityConfirmed:action.person==='representative'&&!!action.authorityConfirmed,recorder:String(action.recorder).trim().slice(0,80),at:new Date().toISOString()};
         s.consent=true;detail='대면 상담·기관 문의 동의 기록 · '+s.consultation.recorder;break;
       }
@@ -159,8 +192,18 @@
         need(String(action.reason||'').trim(),'재문의 사유를 기록해 주세요.');
         if(action.date){need(localTimeValid(action.date+'T00:00')&&action.date>=today(),'희망 전원일은 오늘 이후로 선택해 주세요.');s.referralRequest={date:action.date,kind:s.referralRequest?.kind||'inpatient'};}
         if(action.preferences)s.preferences=customPreferences(action.preferences);
-        s.researchReason=String(action.reason).trim().slice(0,1000);s.stage=1;s.expanded=false;s.responses={};s.inquiryNotes={};s.inquiryRequests={};s.inquiries=[];s.consent=false;s.consultation=null;s.lastAgent=null;
-        detail='재문의 조건 변경 · '+s.researchReason;break;
+        if(action.roomType!==undefined){need(Object.hasOwn(roomTypes,action.roomType),'희망 병실을 확인해 주세요.');s.admissionPreferences={roomType:action.roomType};}
+        s.adaptationHistory=s.adaptationHistory||[];s.adaptationHistory.push({at:new Date().toISOString(),round:s.round,reason:String(action.reason).slice(0,1000),rules:adaptationSummary(s).map(r=>({id:r.id,code:r.code,blocked:r.blocked,explanation:r.explanation})),date:s.referralRequest?.date||null,roomType:roomType(s)});
+        s.researchReason=String(action.reason).trim().slice(0,1000);s.stage=action.reviewInformation===true?0:1;s.expanded=false;s.responses={};s.inquiryNotes={};s.inquiryRequests={};s.inquiries=[];s.consent=false;s.consultation=null;s.lastAgent=null;
+        detail='거절 사유를 다음 매칭에 반영 · '+s.researchReason;break;
+      }
+      case 'clearDecline': {
+        role('hospital');at(1);const r=(s.matchingFeedback||[]).find(r=>r.id===action.id);
+        need(r&&!r.resolved,'재확인할 이전 회신을 확인해 주세요.');
+        need(action.confirmed&&String(action.reviewer||'').trim()&&String(action.note||'').trim(),'기관과 확인한 변경 내용과 확인자를 기록해 주세요.');
+        r.resolved={at:new Date().toISOString(),reviewer:String(action.reviewer).trim().slice(0,80),note:String(action.note).trim().slice(0,1000)};
+        s.fieldHistory.push({at:r.resolved.at,reviewer:r.resolved.reviewer,changes:[{field:facilities.find(f=>f.id===r.id).name+' 수용 조건 재확인',before:r.reason,after:r.resolved.note}]});
+        s.consent=false;s.consultation=null;s.lastAgent=null;detail='기관 여건 변경 확인 · '+facilities.find(f=>f.id===r.id).name+' · 상담·동의 재확인';break;
       }
       case 'requestDetails': role('hospital');at(0);need(requestValid(action.values)&&action.values.date>=today(),'희망 전원일은 오늘 이후로 선택해 주세요.');s.referralRequest={date:action.values.date,kind:action.values.kind};detail='희망 전원일·수용 형태 기록';break;
       case 'ready': role('hospital');at(0);need(s.doctorApproved,'담당의의 회송 결정을 확인해 주세요.');need(!s.requiresCoordination||requestValid(s.referralRequest)&&s.referralRequest.date>=today(),'희망 전원일과 수용 형태를 먼저 저장해 주세요.');need(s.parsed&&!missing(s).length,'누락된 회송 정보를 먼저 보완해 주세요.');need(!unresolved(s).length||clinicalReviewed(s),'미확정 항목을 보완하거나 원 처방 확인을 기록해 주세요.');need(/정맥.*항생제|항생제.*정맥/.test(s.data.treatment),'현재 프로토타입은 정맥 항생제 치료 시나리오만 지원합니다. 다른 처치는 별도 설계가 필요합니다.');s.stage=1;detail='필수 정보 점검 완료 · 기관 문의 준비';break;
@@ -204,7 +247,7 @@
         detail=ids.length+'개 가상 기관에 비식별 수용 문의 생성 · 실제 전송 없음';
         break;
       }
-      case 'response': role('facility');at(2);need(s.inquiries.includes(action.id)&&s.responses[action.id]?.status!=='withdrawn','종료된 문의에는 회신할 수 없습니다.');need(['accepted','rejected','more'].includes(action.status),'응답을 선택해 주세요.');need(action.status==='accepted'||String(action.reason||'').trim(),'거절 또는 추가 확인 사유를 적어 주세요.');if(action.status==='accepted'&&(s.requiresCoordination||action.offer))need(offerValid(action.offer),'수용 가능한 일시·접수 장소·주소를 입력해 주세요.');const offer=action.status==='accepted'&&action.offer?Object.fromEntries(['when','venue','address','contact','notes'].map(k=>[k,String(action.offer[k]||'').trim()])):null;need(!action.reasonCode||Object.hasOwn(declineReasons,action.reasonCode),'수용 불가 사유를 확인해 주세요.');s.responses[action.id]={status:action.status,reason:String(action.reason||'수용 담당자 조건 확인'),reasonCode:action.status==='rejected'?(action.reasonCode||'other'):null,offer,at:new Date().toISOString()};detail=facilities.find(f=>f.id===action.id).name+' 수용 응답 기록';break;
+      case 'response': role('facility');at(2);need(s.inquiries.includes(action.id)&&s.responses[action.id]?.status!=='withdrawn','종료된 문의에는 회신할 수 없습니다.');need(['accepted','rejected','more'].includes(action.status),'응답을 선택해 주세요.');need(action.status==='accepted'||String(action.reason||'').trim(),'거절 또는 추가 확인 사유를 적어 주세요.');if(action.status==='accepted'&&(s.requiresCoordination||action.offer))need(offerValid(action.offer),'수용 가능한 일시·접수 장소·주소를 입력해 주세요.');const offer=action.status==='accepted'&&action.offer?Object.fromEntries(['when','venue','address','contact','notes'].map(k=>[k,String(action.offer[k]||'').trim()])):null;need(!action.reasonCode||Object.hasOwn(declineReasons,action.reasonCode),'수용 불가 사유를 확인해 주세요.');if(action.status==='accepted')s.matchingFeedback=(s.matchingFeedback||[]).filter(r=>r.id!==action.id);s.responses[action.id]={status:action.status,reason:String(action.reason||'수용 담당자 조건 확인'),reasonCode:action.status==='rejected'?(action.reasonCode||'other'):null,offer,at:new Date().toISOString()};detail=facilities.find(f=>f.id===action.id).name+' 수용 응답 기록';break;
       case 'demoResponse': role('simulation');at(2);need(s.inquiries.includes(action.id),'문의 대상 기관이 아닙니다.');need(!s.responses[action.id],'이미 응답이 기록된 기관입니다.');{const f=facilities.find(f=>f.id===action.id),status=s.scenario==='unavailable'&&s.round===1?'rejected':s.inquiryNotes?.[action.id]?'accepted':f.response;s.responses[action.id]={status,reason:status==='rejected'?'희망 일정 수용 불가 (가상)':s.inquiryNotes?.[action.id]?'담당의 보완 정보 확인 후 수용 가능 (가상)':f.note,at:new Date().toISOString(),simulated:true,offer:status==='accepted'?exampleOffer(s,f):null};detail=f.name+' 모의 수용 응답 자동 수신';}break;
       case 'provideInfo': role('hospital');at(2);need(s.responses[action.id]?.status==='more','추가 정보 요청 건을 확인해 주세요.');need(action.confirmed,'담당의가 확인한 보완 정보인지 확인해 주세요.');need(String(action.note||'').trim(),'보완 회신 내용을 입력해 주세요.');s.inquiryNotes=s.inquiryNotes||{};s.inquiryNotes[action.id]=String(action.note).trim();s.fieldHistory.push({at:new Date().toISOString(),reviewer:String(action.reviewer||'의뢰기관 담당자').slice(0,80),changes:[{field:facilities.find(f=>f.id===action.id).name+' 보완 회신',before:s.responses[action.id].reason,after:s.inquiryNotes[action.id]}]});s.inquiryRequests=s.inquiryRequests||{};s.inquiryRequests[action.id]=s.responses[action.id].reason;delete s.responses[action.id];detail='추가 정보 요청에 담당의 확인 내용 회신 · 재응답 대기';break;
       case 'demoResponses': role('simulation');at(2);for(const id of s.inquiries){if(s.responses[id])continue;const f=facilities.find(f=>f.id===id);const status=s.scenario==='unavailable'&&s.round===1?'rejected':s.inquiryNotes?.[id]?'accepted':f.response;s.responses[id]={status,reason:status==='rejected'?'희망 일정 수용 불가 (가상)':f.note,at:new Date().toISOString(),offer:status==='accepted'?exampleOffer(s,f):null};}detail='미리 준비된 가상 기관 응답 불러오기 · 실제 응답 아님';break;
@@ -241,7 +284,7 @@
     s.metrics.started=s.metrics.started||Date.now();s.metrics.actions++;
     s.events.unshift({type:action.type,actor,detail,time:new Date().toISOString()});return s;
   }
-  const api={today,unresolvedValue,unresolved,clinicalReviewed,previousInquiry,declineReasons,facilities,profiles,locations,customPreferences,exampleOffer,localTimeValid,requestValid,offerValid,visitValidation,scheduleValid,profile,score,agentAction,assistanceAction,assistanceKey,inquiryTemplate,facilityRequest,stages,ageGroups,fields,initial,extract,missing,candidates,accepted,summary,transition};
+  const api={roomTypes,roomType,collectDeclines,feedbackState,adaptationSummary,rematchPlan,today,unresolvedValue,unresolved,clinicalReviewed,previousInquiry,declineReasons,facilities,profiles,locations,customPreferences,exampleOffer,localTimeValid,requestValid,offerValid,visitValidation,scheduleValid,profile,score,agentAction,assistanceAction,assistanceKey,inquiryTemplate,facilityRequest,stages,ageGroups,fields,initial,extract,missing,candidates,accepted,summary,transition};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;
   root.CareBridge=api;
 })(typeof globalThis!=='undefined'?globalThis:this);

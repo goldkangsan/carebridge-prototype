@@ -7,7 +7,7 @@ import {patientFromRegister,patientSnapshot} from './patients.mjs';
 export const hashToken=t=>createHash('sha256').update(t).digest('hex');
 const uuid=s=>typeof s==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s);
 const token=s=>typeof s==='string'&&/^[A-Za-z0-9_-]{43}$/.test(s);
-const allow={hospital:['clinicalReview','intakeDetails','consultation','research','requestDetails','attest','source','parse','applyExtraction','supplement','ready','provideInfo','expand','prep','handoff','ack','relink','transferPlan','handoffRequest','send','publish'],patient:['customPreferences','profile','preferences','consent','choose','rejectCandidates'],facility:['facilityContact','facilityUpdate','response','visit']};
+const allow={hospital:['clinicalReview','intakeDetails','consultation','research','clearDecline','requestDetails','attest','source','parse','applyExtraction','supplement','ready','provideInfo','expand','prep','handoff','ack','relink','transferPlan','handoffRequest','send','publish'],patient:['customPreferences','profile','preferences','consent','choose','rejectCandidates'],facility:['facilityContact','facilityUpdate','response','visit']};
 function credentialsFor(M,owner){return Object.fromEntries(['hospital','patient',...M.facilities.map(f=>'facility/'+f.id)].map(key=>[key,key==='hospital'?owner:createHmac('sha256',owner).update(key).digest('base64url')]));}
 export function projectState(M,state,grant){
  const s=structuredClone(state);
@@ -15,7 +15,7 @@ export function projectState(M,state,grant){
  if(grant.role==='facility'){
   const own=grant.facility,shared=s.selected===own&&s.shareConsent;
   s.responses=s.responses[own]?{[own]:s.responses[own]}:{};s.inquiries=s.inquiries.includes(own)?[own]:[];
-  s.roundHistory=[];s.responseHistory=(s.responseHistory||[]).filter(x=>x.id===own);s.fieldHistory=[];s.consultation=null;s.clinicalReview=null;
+  s.roundHistory=[];s.responseHistory=(s.responseHistory||[]).filter(x=>x.id===own);s.fieldHistory=[];s.consultation=null;s.clinicalReview=null;s.matchingFeedback=[];s.adaptationHistory=[];
   s.unresolvedFields=M.unresolved(state).map(k=>M.fields[k]);
   s.events=[];s.agentRuns=[];s.lastAgent=null;s.extraction=null;s.assistance=null;s.assistanceRuns=[];s.sentInquiryDraft='';
   s.inquiryNotes=s.inquiryNotes[own]?{[own]:s.inquiryNotes[own]}:{};s.inquiryRequests=s.inquiryRequests?.[own]?{[own]:s.inquiryRequests[own]}:{};

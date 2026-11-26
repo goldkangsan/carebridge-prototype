@@ -34,9 +34,10 @@ export function assistanceContext(M,s){
  for(const k of ['infection','oxygen','suction'])if(!s.intake?.[k]||s.intake[k]==='unknown')checks.push({id:'intake-'+k,text:({infection:'감염 관리',oxygen:'산소 공급',suction:'흡인'})[k]+' 필요 여부를 확인해 주세요.'});
  for(const f of ranked)if(!f.fresh)checks.push({id:'stale-'+f.id,text:f.name+'의 등록 정보가 오래되었습니다. 이번 회신으로 처치·수용 여건을 재확인해 주세요.'});
  if(s.stage===2&&s.inquiries.some(id=>!s.responses[id]))checks.push({id:'pending',text:'미회신 기관을 수용 가능 기관으로 간주하지 않습니다.'});
+ for(const r of M.adaptationSummary(s))checks.push({id:'adapt-'+r.id,text:r.name+' · '+r.label+' → '+r.explanation});
  const action=M.assistanceAction(s);
  return {stage:s.stage,round:s.round,action,actionText:adviceLabels[action],
-  requiredLines:['treatment','period','isolation'].map(k=>M.fields[k]+': '+deidentify(s.data[k],s)),
+  requiredLines:[...['treatment','period','isolation'].map(k=>M.fields[k]+': '+deidentify(s.data[k],s)),...(M.roomType(s)!=='unspecified'?['희망 병실: '+M.roomTypes[M.roomType(s)]]:[])],
   requestedDate:M.requestValid(s.referralRequest)?s.referralRequest.date:null,
   intake:Object.fromEntries(['infection','oxygen','suction'].map(k=>[k,s.intake?.[k]||'unknown'])),
   ranked:ranked.map(f=>({id:f.id,score:f.score,facts:{treatment:'등록된 정맥 투여 처치 가능',distance:'예상 이동 '+f.minutes+'분 · '+f.km+'km',budget:'하루 예상 비용 '+f.cost.toLocaleString('ko-KR')+'원',preferences:M.profile(s).text,quality:'기관 평가 '+f.quality+'/100',history:'응답률 '+f.responseRate+'% · 불일치율 '+f.mismatchRate+'%',fresh:f.fresh?'등록 정보 갱신 '+f.updated:'등록 정보가 오래되어 재확인 필요',...(f.response?.status==='accepted'?{acceptance:'이번 문의에서 수용 가능 회신을 받음'}:{})}})),
